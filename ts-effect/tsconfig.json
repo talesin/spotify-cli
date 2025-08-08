@@ -39,6 +39,14 @@
     "allowUnreachableCode": false,
 
     "skipDefaultLibCheck": true,
-    "skipLibCheck": true
-  }
+    "skipLibCheck": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@src/*": ["./src/*"],
+      "@test/*": ["./test/*"],
+      "@data/*": ["./data/*"]
+    },
+  },
+  "include": ["src", "test", "jest.config.ts"]
 }
