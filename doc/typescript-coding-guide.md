@@ -13,6 +13,33 @@ Use ?? instead of || when checking for null or undefined.
 Do not use implicit boolean expressions
 Prefer the use of types over interfaces unless there's precedence (ie. if there are specific examples or patterns to follow)
 
+## Error Handling
+
+Use `Data.TaggedError` for domain-specific error classes instead of `Data.TaggedClass`. This provides better error semantics and integrates properly with Effect's error handling.
+
+```typescript
+export class ConfigParseError extends Data.TaggedError("ConfigParseError")<{
+  readonly message: string;
+  readonly error: ParseError | PlatformError;
+}> {}
+```
+
+Use `Effect.mapError` to transform errors into domain-specific types:
+
+```typescript
+const result =
+  yield *
+  someOperation.pipe(
+    Effect.mapError(
+      (error) =>
+        new ConfigParseError({
+          message: error.message,
+          error,
+        })
+    )
+  );
+```
+
 ## Effect Services
 
 Entry into functions should be via an Effect.Service class. This will allow for dependency injection and testing. Do not create a a Live layer, Effect.Service provides a Default property for that.
@@ -48,7 +75,7 @@ export const TestExampleServiceLayer = (fn?: {
 
 ## HTTP Requests with Effect
 
-Setup the function to fetch a URL with some simple currying. This allows the HttpClient to be injected at runtime.
+Setup the function to fetch a URL with currying to inject HttpClient at runtime. Always handle errors with proper error mapping.
 
 ```typescript
 import { HttpClient } from "@effect/platform";
@@ -56,43 +83,68 @@ import { HttpClientError } from "@effect/platform/HttpClientError";
 
 export const fetchUrl = (httpClient: HttpClient.HttpClient) =>
   Effect.fn(function* (url: string) {
-    const response = yield* httpClient.get(url);
-    const text = yield* response.text;
+    const response = yield* httpClient
+      .get(url)
+      .pipe(
+        Effect.mapError((error) => new NetworkError({ message: String(error) }))
+      );
+
+    const text = yield* response.text.pipe(
+      Effect.mapError(
+        (error) => new InvalidResponse({ message: error.message, error })
+      )
+    );
 
     return text;
   });
 ```
 
-When running this you will need to do something similar to the following to provide the HttpClient
+For API calls with authentication and response parsing:
 
 ```typescript
-const program = Effect.gen(function* () {
-  const httpClient = yield* HttpClient;
-  const response = yield* fetchUrl(httpClient)("https://example.com");
-  Effect.log(response);
-});
+export const spotifyApiCall =
+  (httpClient: HttpClient.HttpClient) =>
+  <A>(
+    endpoint: string,
+    accessToken: string,
+    parser: (json: unknown) => Effect.Effect<A, ParseError>
+  ) =>
+    Effect.gen(function* () {
+      const request = createAuthenticatedRequest(endpoint, accessToken);
+      const response = yield* httpClient
+        .execute(request)
+        .pipe(
+          Effect.mapError(
+            (error) => new NetworkError({ message: String(error) })
+          )
+        );
 
-program.pipe(Effect.provide(FetchHttpClient.layer), Effect.runPromise);
+      const result = yield* handleHttpResponse(parser)(response);
+      return result;
+    });
 ```
 
-## Prefer Effect.gen or Effect.fn over use of Effect.flatMap
+## Effect.gen vs Effect.fn
 
-In most cases (not all), using `Effect.gen/Effect.fn` with `yield*` is preferable to using multiple `Effect.map`s and `Effect.mapFlat`s.
+Use `Effect.fn` for pure, reusable functions that accept parameters and return Effects. Use `Effect.gen` for workflow orchestration and complex operations.
 
 ```typescript
-const example = Effect.gen(function* () {
-  const result = yield* Effect.all([
-    Effect.succeed(1),
-    Effect.succeed(2),
-    Effect.succeed(3),
-  ]);
-});
+// Use Effect.fn for pure functions with parameters
+const loadTokens = (fs: FileSystem.FileSystem) =>
+  Effect.fn(function* () {
+    const configPath = yield* getConfigPath;
+    const exists = yield* fs
+      .exists(configPath)
+      .pipe(Effect.catchAll(() => Effect.succeed(false)));
+    // ... rest of implementation
+  });
 
-const func = Effect.fn(
-  (a: Effect<number>, b: Effect<number>, c: Effect<number>) => {
-    const result = yield * Effect.all([a, b, c]);
-  }
-);
+// Use Effect.gen for workflow orchestration
+const authWorkflow = Effect.gen(function* () {
+  const configService = yield* ConfigService;
+  const tokens = yield* configService.loadTokens();
+  // ... complex workflow
+});
 ```
 
 ## Testing with Effect
@@ -188,7 +240,7 @@ const n2 = yield * random.next;
 ## Schema
 
 Prefer using tagged schemas with derived types over interfaces, unless there is a specific need for an interface.
-Keep names the same unless there is a conflict.
+Keep names the same unless there is a conflict. Use proper error handling with `Effect.mapError` when decoding.
 
 ```typescript
 // define the schema
@@ -200,13 +252,35 @@ export const SampleResponse = Schema.TaggedStruct("SampleResponse", {
 // define the type
 export type SampleResponse = typeof SampleResponse.Type;
 
-// decode the response
-const json = yield* Schema.decodeUnknown(Schema.parseJson())('{"message": "Test message", "data": []}');
+// decode JSON string to unknown first
+const json =
+  yield *
+  Schema.decodeUnknown(Schema.parseJson())(
+    '{"message": "Test message", "data": []}'
+  ).pipe(
+    Effect.mapError(
+      (error) =>
+        new InvalidResponse({
+          message: `Invalid JSON: ${error.message}`,
+          error,
+        })
+    )
+  );
 
-// decode the response from json
-const response: SampleResponse = yield * Schema.decodeUnknown(SampleResponse)(json);
+// decode the JSON using schema with error handling
+const response: SampleResponse =
+  yield *
+  Schema.decodeUnknown(SampleResponse)(json).pipe(
+    Effect.mapError(
+      (error) =>
+        new InvalidResponse({
+          message: `Invalid format: ${error.message}`,
+          error,
+        })
+    )
+  );
 
-// make the response directly
+// make the response directly using .make()
 const response = SampleResponse.make({
   message: "Test message",
   data: [],
