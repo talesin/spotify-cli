@@ -1,5 +1,5 @@
 /**
- * HTTP Client Module for Spotify Web API
+ * Spotify API Module
  *
  * This module provides a functional, type-safe HTTP client specifically designed
  * for interacting with the Spotify Web API. It handles authentication, error cases,
@@ -15,11 +15,13 @@
  * The module follows REST API best practices and Spotify's API guidelines:
  * - https://developer.spotify.com/documentation/web-api/
  *
- * @module http
+ * @module SpotifyApi
  */
 
 import { Data, Effect, Layer, Option } from 'effect'
 import { HttpClient, HttpClientRequest, HttpClientResponse, HttpBody } from '@effect/platform'
+import { ParseError } from 'effect/ParseResult'
+import { ResponseError } from '@effect/platform/HttpClientError'
 
 /**
  * Unauthorized Error (HTTP 401)
@@ -33,7 +35,7 @@ import { HttpClient, HttpClientRequest, HttpClientResponse, HttpBody } from '@ef
  * - Token was revoked by the user
  * - Invalid or malformed token
  */
-export class Unauthorized extends Data.TaggedClass('Unauthorized')<Record<string, never>> {}
+export class Unauthorized extends Data.TaggedError('Unauthorized')<Record<string, never>> {}
 
 /**
  * Network Error
@@ -42,8 +44,9 @@ export class Unauthorized extends Data.TaggedClass('Unauthorized')<Record<string
  * other specific categories. This includes connection failures, DNS resolution
  * errors, timeouts, and HTTP status codes >= 400 (except 401 and 429).
  */
-export class NetworkError extends Data.TaggedClass('NetworkError')<{
-  readonly error: string
+export class NetworkError extends Data.TaggedError('NetworkError')<{
+  readonly message: string
+  readonly status?: number
 }> {}
 
 /**
@@ -55,8 +58,9 @@ export class NetworkError extends Data.TaggedClass('NetworkError')<{
  * - Corrupted response data
  * - Unexpected response format
  */
-export class InvalidResponse extends Data.TaggedClass('InvalidResponse')<{
-  readonly error: string
+export class InvalidResponse extends Data.TaggedError('InvalidResponse')<{
+  readonly message: string
+  readonly error: ParseError | ResponseError
 }> {}
 
 /**
@@ -69,7 +73,7 @@ export class InvalidResponse extends Data.TaggedClass('InvalidResponse')<{
  * Spotify's rate limits vary by endpoint but are generally generous for
  * normal usage patterns. The client should respect the retryAfter value.
  */
-export class RateLimited extends Data.TaggedClass('RateLimited')<{
+export class RateLimited extends Data.TaggedError('RateLimited')<{
   readonly retryAfter: number
 }> {}
 
@@ -137,7 +141,7 @@ const createAuthenticatedRequest = (endpoint: string, accessToken: string) =>
  * ```
  */
 const handleHttpResponse =
-  <A>(parser: (json: unknown) => A) =>
+  <A>(parser: (json: unknown) => Effect.Effect<A, ParseError>) =>
   (response: HttpClientResponse.HttpClientResponse) =>
     Effect.gen(function* () {
       // Handle unauthorized - token is invalid or expired
@@ -162,22 +166,20 @@ const handleHttpResponse =
       if (response.status >= 400) {
         return yield* Effect.fail(
           new NetworkError({
-            error: `HTTP ${response.status}`
+            message: `HTTP ${response.status}`,
+            status: response.status
           })
         )
       }
 
       // Parse successful response
-      try {
-        const json = yield* response.json
-        return parser(json)
-      } catch (error) {
-        return yield* Effect.fail(
-          new InvalidResponse({
-            error: String(error)
-          })
-        )
-      }
+      const json = yield* response.json.pipe(
+        Effect.mapError((error) => new InvalidResponse({ message: error.message, error }))
+      )
+
+      return yield* parser(json).pipe(
+        Effect.mapError((error) => new InvalidResponse({ message: error.message, error }))
+      )
     })
 
 /**
@@ -213,26 +215,19 @@ const handleHttpResponse =
  */
 export const spotifyApiCall =
   (httpClient: HttpClient.HttpClient) =>
-  <A>(endpoint: string, accessToken: string, parser: (json: unknown) => A) =>
+  <A>(
+    endpoint: string,
+    accessToken: string,
+    parser: (json: unknown) => Effect.Effect<A, ParseError>
+  ) =>
     Effect.gen(function* () {
       const request = createAuthenticatedRequest(endpoint, accessToken)
-      const response = yield* httpClient.execute(request)
+      const response = yield* httpClient
+        .execute(request)
+        .pipe(Effect.mapError((error) => new NetworkError({ message: String(error) })))
       const result = yield* handleHttpResponse(parser)(response)
       return result
-    }).pipe(
-      Effect.mapError((error): SpotifyApiError => {
-        // Handle HttpClient errors and map to our SpotifyApiError union
-        if (
-          error instanceof Unauthorized ||
-          error instanceof NetworkError ||
-          error instanceof InvalidResponse ||
-          error instanceof RateLimited
-        ) {
-          return error
-        }
-        return new NetworkError({ error: String(error) })
-      })
-    )
+    })
 
 /**
  * Create OAuth Token Exchange Request
@@ -311,7 +306,7 @@ export const exchangeCodeForTokens =
       if (response.status !== 200) {
         return yield* Effect.fail(
           new NetworkError({
-            error: `Token exchange failed: ${response.status}`
+            message: `Token exchange failed: ${response.status}`
           })
         )
       }
@@ -327,42 +322,42 @@ export const exchangeCodeForTokens =
         if (error instanceof NetworkError) {
           return error
         }
-        return new NetworkError({ error: String(error) })
+        return new NetworkError({ message: String(error) })
       })
     )
 
 /**
- * HTTP Service
+ * Spotify API Service
  *
  * Effect Service that provides HTTP operations for Spotify API.
  * Follows the coding guide pattern with Effect.Service class and automatic
  * Default layer generation for dependency injection.
  */
-export class HttpService extends Effect.Service<HttpService>()('HttpService', {
+export class SpotifyApi extends Effect.Service<SpotifyApi>()('SpotifyApi', {
   effect: Effect.gen(function* () {
     const httpClient = yield* HttpClient.HttpClient
     return {
-      spotifyApiCall: spotifyApiCall(httpClient),
+      call: spotifyApiCall(httpClient),
       exchangeCodeForTokens: exchangeCodeForTokens(httpClient)
     }
   })
 }) {}
 
 /**
- * Test HTTP Service Layer
+ * Test Spotify API Service Layer
  *
- * Creates a test layer for HttpService that allows mocking of HTTP operations
+ * Creates a test layer for SpotifyApi that allows mocking of HTTP operations
  * during testing. This follows the pattern shown in the coding guide.
  */
-export const TestHttpServiceLayer = (fn?: {
-  spotifyApiCall?: HttpService['spotifyApiCall'] | undefined
-  exchangeCodeForTokens?: HttpService['exchangeCodeForTokens'] | undefined
+export const TestSpotifyApiLayer = (fn?: {
+  spotifyApiCall?: SpotifyApi['call'] | undefined
+  exchangeCodeForTokens?: SpotifyApi['exchangeCodeForTokens'] | undefined
 }) =>
   Layer.succeed(
-    HttpService,
-    HttpService.of({
-      _tag: 'HttpService',
-      spotifyApiCall: fn?.spotifyApiCall ?? (() => Effect.succeed({} as any)), // eslint-disable-line
+    SpotifyApi,
+    SpotifyApi.of({
+      _tag: 'SpotifyApi',
+      call: fn?.spotifyApiCall ?? (() => Effect.succeed({} as any)), // eslint-disable-line
       exchangeCodeForTokens:
         fn?.exchangeCodeForTokens ??
         (() =>

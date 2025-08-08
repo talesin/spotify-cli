@@ -17,9 +17,10 @@
 
 import { Command } from '@effect/cli'
 import { Console, Effect } from 'effect'
-import { NodeContext, NodeRuntime, NodeHttpClient, NodeFileSystem } from '@effect/platform-node'
+import { NodeContext, NodeRuntime } from '@effect/platform-node'
 import { ConfigService } from './config'
-import { HttpService } from './http'
+import { FetchHttpClient } from '@effect/platform'
+import { SpotifyApi } from './spotifyApi'
 
 /**
  * Authentication Command
@@ -41,7 +42,7 @@ const authCommand = Command.make('auth', {}, () =>
     yield* Console.log('Dependencies (ConfigService) are injected properly')
 
     // Example: Load tokens to demonstrate dependency injection works
-    const existingTokens = yield* configService.loadTokens
+    const existingTokens = yield* configService.loadTokens()
 
     // Use Effect-TS pattern matching with Option
     yield* existingTokens._tag === 'Some'
@@ -67,19 +68,17 @@ const authCommand = Command.make('auth', {}, () =>
 const meCommand = Command.make('me', {}, () =>
   Effect.gen(function* () {
     const configService = yield* ConfigService
-    const httpService = yield* HttpService
+    const httpService = yield* SpotifyApi
 
     yield* Console.log('User profile command - to be implemented')
     yield* Console.log('Dependencies (ConfigService and HttpService) are injected properly')
 
     // Example: Demonstrate service availability
-    const existingTokens = yield* configService.loadTokens
+    const existingTokens = yield* configService.loadTokens()
     yield* Console.log(
       `Config service working: ${existingTokens._tag === 'Some' ? 'Found tokens' : 'No tokens'}`
     )
-    yield* Console.log(
-      `HTTP service available: ${typeof httpService.spotifyApiCall === 'function'}`
-    )
+    yield* Console.log(`HTTP service available: ${typeof httpService.call === 'function'}`)
   })
 )
 
@@ -100,13 +99,13 @@ const meCommand = Command.make('me', {}, () =>
 const playlistsCommand = Command.make('playlists', {}, () =>
   Effect.gen(function* () {
     const configService = yield* ConfigService
-    const httpService = yield* HttpService
+    const httpService = yield* SpotifyApi
 
     yield* Console.log('Playlists command - to be implemented')
     yield* Console.log('Dependencies (ConfigService and HttpService) are injected properly')
 
     // Example: Demonstrate service availability
-    const existingTokens = yield* configService.loadTokens
+    const existingTokens = yield* configService.loadTokens()
     yield* Console.log(
       `Config service working: ${existingTokens._tag === 'Some' ? 'Found tokens' : 'No tokens'}`
     )
@@ -157,9 +156,8 @@ const cli = Command.run(mainCommand, {
  */
 cli(process.argv).pipe(
   Effect.provide(ConfigService.Default),
-  Effect.provide(HttpService.Default),
+  Effect.provide(SpotifyApi.Default),
+  Effect.provide(FetchHttpClient.layer),
   Effect.provide(NodeContext.layer),
-  Effect.provide(NodeFileSystem.layer),
-  Effect.provide(NodeHttpClient.layerUndici),
   NodeRuntime.runMain
 )

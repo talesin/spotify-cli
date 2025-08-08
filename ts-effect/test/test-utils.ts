@@ -9,7 +9,7 @@
  */
 
 import { Effect, Option } from 'effect'
-import { TokenData } from '../src/config'
+import { TokenDataSchema } from '../src/config'
 import * as Os from 'os'
 import * as Path from 'path'
 
@@ -19,19 +19,19 @@ import * as Path from 'path'
  * Provides realistic test data for Spotify OAuth tokens.
  */
 export const mockTokens = {
-  valid: new TokenData({
+  valid: TokenDataSchema.make({
     accessToken: 'BQC4TJWdRHO1vz6Gq2bUtZ9xF8HgN5kLaR3mPqE7',
     refreshToken: 'AQDTy8xNQ2LmJ4R9vK8sF3nH7pL6qE9tY2wI0oP5',
     expiresAt: Date.now() + 3600000 // Expires in 1 hour
   }),
   
-  expired: new TokenData({
+  expired: TokenDataSchema.make({
     accessToken: 'BQExpiredTokenHere123456789',
     refreshToken: 'AQRefreshTokenForExpiredAccess',
     expiresAt: Date.now() - 1000 // Expired 1 second ago
   }),
   
-  soonToExpire: new TokenData({
+  soonToExpire: TokenDataSchema.make({
     accessToken: 'BQSoonToExpireToken987654321',
     refreshToken: 'AQRefreshTokenSoonExpire',
     expiresAt: Date.now() + 30000 // Expires in 30 seconds

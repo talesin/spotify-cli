@@ -200,10 +200,13 @@ export const SampleResponse = Schema.TaggedStruct("SampleResponse", {
 // define the type
 export type SampleResponse = typeof SampleResponse.Type;
 
-// decode the response from json
-const response = yield * Schema.decodeUnknown(SampleResponse)(json);
+// decode the response
+const json = yield* Schema.decodeUnknown(Schema.parseJson())('{"message": "Test message", "data": []}');
 
-// make the response
+// decode the response from json
+const response: SampleResponse = yield * Schema.decodeUnknown(SampleResponse)(json);
+
+// make the response directly
 const response = SampleResponse.make({
   message: "Test message",
   data: [],

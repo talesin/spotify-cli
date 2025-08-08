@@ -16,27 +16,37 @@
  * @module config
  */
 
-import { Data, Effect, Layer, Option } from 'effect'
+import { Data, Effect, Layer, Option, Schema } from 'effect'
 import { FileSystem } from '@effect/platform'
 import * as Path from 'path'
 import * as Os from 'os'
+import { ParseError } from 'effect/ParseResult'
+import { PlatformError } from '@effect/platform/Error'
 
 /**
- * Token Data Structure
+ * Token Data Schema
  *
- * Represents the Spotify OAuth tokens obtained during authentication.
- * This class extends Effect-TS's TaggedClass for type-safe pattern matching
- * and serialization.
+ * Defines the schema for Spotify OAuth tokens with proper validation.
+ * This schema ensures type safety and validation when loading tokens from
+ * storage or receiving them from the Spotify API.
  *
  * @property accessToken - Bearer token for Spotify API requests
  * @property refreshToken - Token used to refresh expired access tokens
  * @property expiresAt - Unix timestamp when the access token expires
  */
-export class TokenData extends Data.TaggedClass('TokenData')<{
-  readonly accessToken: string
-  readonly refreshToken: string
-  readonly expiresAt: number
-}> {}
+export const TokenDataSchema = Schema.TaggedStruct('TokenData', {
+  accessToken: Schema.String,
+  refreshToken: Schema.String,
+  expiresAt: Schema.Number
+})
+
+/**
+ * Token Data Type
+ *
+ * TypeScript type derived from the TokenData schema for use throughout
+ * the application.
+ */
+export type TokenData = typeof TokenDataSchema.Type
 
 /**
  * Spotify Tokens Type Alias
@@ -53,7 +63,7 @@ export type SpotifyTokens = TokenData
  * This is not necessarily an error condition - it may indicate the user
  * needs to authenticate for the first time.
  */
-export class ConfigNotFound extends Data.TaggedClass('ConfigNotFound')<Record<string, never>> {}
+export class ConfigNotFound extends Data.TaggedError('ConfigNotFound')<Record<string, never>> {}
 
 /**
  * Configuration Parse Error
@@ -62,8 +72,9 @@ export class ConfigNotFound extends Data.TaggedClass('ConfigNotFound')<Record<st
  * or doesn't contain the expected token structure. This may indicate file
  * corruption or manual modification of the config file.
  */
-export class ConfigParseError extends Data.TaggedClass('ConfigParseError')<{
-  readonly error: string
+export class ConfigParseError extends Data.TaggedError('ConfigParseError')<{
+  readonly message: string
+  readonly error: ParseError | PlatformError
 }> {}
 
 /**
@@ -72,8 +83,8 @@ export class ConfigParseError extends Data.TaggedClass('ConfigParseError')<{
  * Thrown when the system cannot write the configuration file. This may be due to
  * permission issues, disk space problems, or other file system errors.
  */
-export class ConfigWriteError extends Data.TaggedClass('ConfigWriteError')<{
-  readonly error: string
+export class ConfigWriteError extends Data.TaggedError('ConfigWriteError')<{
+  readonly message: string
 }> {}
 
 /**
@@ -93,7 +104,7 @@ export type ConfigError = ConfigNotFound | ConfigParseError | ConfigWriteError
  *
  * @returns Effect that yields the configuration file path
  */
-const getConfigPath = Effect.sync(() => Path.join(Os.homedir(), '.spotify-cli', 'spotify.json'))
+const getConfigPath = Effect.sync(() => Path.join(Os.homedir(), '.spotify-cli', 'spotify.json')) // TODO: Os.homedir should be a resource
 
 /**
  * Ensure Configuration Directory Exists
@@ -145,37 +156,38 @@ const ensureConfigDirectory = (fs: FileSystem.FileSystem) =>
  * ```
  */
 export const loadTokens = (fs: FileSystem.FileSystem) =>
-  Effect.gen(function* () {
+  Effect.fn(function* () {
     const configPath = yield* getConfigPath
 
-    const exists = yield* fs.exists(configPath)
+    const exists = yield* fs.exists(configPath).pipe(Effect.catchAll(() => Effect.succeed(false)))
     if (!exists) {
       return Option.none<SpotifyTokens>()
     }
 
-    const content = yield* fs.readFileString(configPath)
+    const content = yield* fs
+      .readFileString(configPath)
+      .pipe(Effect.mapError((error) => new ConfigParseError({ message: error.message, error })))
 
-    return yield* Effect.try({
-      try: () => {
-        const parsed = JSON.parse(content)
-        return Option.some(
-          new TokenData({
-            accessToken: parsed.accessToken,
-            refreshToken: parsed.refreshToken,
-            expiresAt: parsed.expiresAt
+    // Decode the textual content to JSON
+    const json = yield* Schema.decodeUnknown(Schema.parseJson())(content).pipe(
+      Effect.mapError(
+        (error) => new ConfigParseError({ message: `Invalid JSON: ${error.message}`, error })
+      )
+    )
+
+    // Decode the JSON using TokenData schema for validation
+    const tokenData: TokenData = yield* Schema.decodeUnknown(TokenDataSchema)(json).pipe(
+      Effect.mapError(
+        (error) =>
+          new ConfigParseError({
+            message: `Invalid token format: ${error.message}`,
+            error
           })
-        )
-      },
-      catch: (error) => new ConfigParseError({ error: String(error) })
-    })
-  }).pipe(
-    Effect.mapError((error): ConfigError => {
-      if (error instanceof ConfigNotFound || error instanceof ConfigParseError) {
-        return error
-      }
-      return new ConfigParseError({ error: String(error) })
-    })
-  )
+      )
+    )
+
+    return Option.some(tokenData)
+  })
 
 /**
  * Save Spotify Tokens to Configuration
@@ -196,7 +208,7 @@ export const loadTokens = (fs: FileSystem.FileSystem) =>
  * @example
  * ```typescript
  * const fs = yield* FileSystem.FileSystem
- * const tokens = new TokenData({
+ * const tokens = TokenDataSchema.make({
  *   accessToken: 'BQC4TJW...',
  *   refreshToken: 'AQDTy8x...',
  *   expiresAt: Date.now() + 3600000
@@ -210,21 +222,15 @@ export const saveTokens = (fs: FileSystem.FileSystem) => (tokens: SpotifyTokens)
   Effect.gen(function* () {
     const configPath = yield* getConfigPath
 
-    yield* ensureConfigDirectory(fs)
+    yield* ensureConfigDirectory(fs).pipe(
+      Effect.mapError((error) => new ConfigWriteError({ message: String(error) }))
+    )
 
     const data = JSON.stringify(tokens, null, 2)
-    yield* Effect.try({
-      try: () => fs.writeFileString(configPath, data),
-      catch: (error) => new ConfigWriteError({ error: String(error) })
-    })
-  }).pipe(
-    Effect.mapError((error): ConfigError => {
-      if (error instanceof ConfigWriteError) {
-        return error
-      }
-      return new ConfigWriteError({ error: String(error) })
-    })
-  )
+    yield* fs
+      .writeFileString(configPath, data)
+      .pipe(Effect.mapError((error) => new ConfigWriteError({ message: String(error) })))
+  })
 
 /**
  * Configuration Service
@@ -257,7 +263,7 @@ export const TestConfigServiceLayer = (fn?: {
     ConfigService,
     ConfigService.of({
       _tag: 'ConfigService',
-      loadTokens: fn?.loadTokens ?? Effect.succeed(Option.none<TokenData>()),
+      loadTokens: fn?.loadTokens ?? (() => Effect.succeed(Option.none())),
       saveTokens: fn?.saveTokens ?? (() => Effect.succeed(undefined))
     })
   )
@@ -278,7 +284,7 @@ export const TestConfigServiceLayer = (fn?: {
  *
  * @example
  * ```typescript
- * const tokens = new TokenData({
+ * const tokens = TokenDataSchema.make({
  *   accessToken: 'BQC4TJW...',
  *   refreshToken: 'AQDTy8x...',
  *   expiresAt: Date.now() - 1000 // Expired 1 second ago
