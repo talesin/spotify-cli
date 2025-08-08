@@ -2,20 +2,19 @@
 
 TypeScript/Effect CLI app for interacting with Spotify.
 
-## Functionality
-
-Refer to [SPEC.md](../SPEC.md) for user stories and acceptance criteria.
+- Refer to [SPEC.md](../SPEC.md) for user stories and acceptance criteria.
+- Refer to [doc/coding-guide.md](../doc/coding-guide.md) and [typescript-coding-guide.md](../doc/typescript-coding-guide.md) for coding guides.
 
 ## Tasks
 
 ### ✅ Phase 1: Project Foundation & Infrastructure - COMPLETED
 
 - [x] ✅ Set up TypeScript project with Effect-TS dependencies
-- [x] ✅ Configure build system (tsup) and development tooling  
+- [x] ✅ Configure build system (tsup) and development tooling
 - [x] ✅ Create CLI structure using @effect/cli with commands (`auth`, `me`, `playlists`)
 - [x] ✅ Implement proper Effect-TS service patterns following coding guide
 - [x] ✅ Create ConfigService for token storage with error handling
-- [x] ✅ Create HttpService for Spotify API calls with error handling  
+- [x] ✅ Create HttpService for Spotify API calls with error handling
 - [x] ✅ Set up comprehensive test suite (25 passing tests)
 - [x] ✅ Implement token storage functionality (`~/.spotify-cli/spotify.json`)
 - [x] ✅ Create HTTP client utilities with proper error types

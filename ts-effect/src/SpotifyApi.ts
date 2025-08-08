@@ -19,7 +19,13 @@
  */
 
 import { Data, Effect, Layer, Option } from 'effect'
-import { HttpClient, HttpClientRequest, HttpClientResponse, HttpBody } from '@effect/platform'
+import {
+  HttpClient,
+  HttpClientRequest,
+  HttpClientResponse,
+  HttpBody,
+  FetchHttpClient
+} from '@effect/platform'
 import { ParseError } from 'effect/ParseResult'
 import { ResponseError } from '@effect/platform/HttpClientError'
 
@@ -340,7 +346,8 @@ export class SpotifyApi extends Effect.Service<SpotifyApi>()('SpotifyApi', {
       call: spotifyApiCall(httpClient),
       exchangeCodeForTokens: exchangeCodeForTokens(httpClient)
     }
-  })
+  }),
+  dependencies: [FetchHttpClient.layer]
 }) {}
 
 /**
@@ -350,14 +357,14 @@ export class SpotifyApi extends Effect.Service<SpotifyApi>()('SpotifyApi', {
  * during testing. This follows the pattern shown in the coding guide.
  */
 export const TestSpotifyApiLayer = (fn?: {
-  spotifyApiCall?: SpotifyApi['call'] | undefined
-  exchangeCodeForTokens?: SpotifyApi['exchangeCodeForTokens'] | undefined
+  call?: SpotifyApi['call']
+  exchangeCodeForTokens?: SpotifyApi['exchangeCodeForTokens']
 }) =>
   Layer.succeed(
     SpotifyApi,
     SpotifyApi.of({
       _tag: 'SpotifyApi',
-      call: fn?.spotifyApiCall ?? (() => Effect.succeed({} as any)), // eslint-disable-line
+      call: fn?.call ?? (() => Effect.succeed({} as any)), // eslint-disable-line
       exchangeCodeForTokens:
         fn?.exchangeCodeForTokens ??
         (() =>

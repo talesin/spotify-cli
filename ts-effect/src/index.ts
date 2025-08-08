@@ -20,7 +20,7 @@ import { Console, Effect } from 'effect'
 import { NodeContext, NodeRuntime } from '@effect/platform-node'
 import { ConfigService } from './config'
 import { FetchHttpClient } from '@effect/platform'
-import { SpotifyApi } from './spotifyApi'
+import { SpotifyApi } from './SpotifyApi'
 
 /**
  * Authentication Command

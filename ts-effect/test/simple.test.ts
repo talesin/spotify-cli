@@ -13,7 +13,7 @@ import {
   isTokenExpired
 } from '@src/config'
 
-import { Unauthorized, NetworkError, InvalidResponse, RateLimited } from '@src/spotifyApi'
+import { Unauthorized, NetworkError, InvalidResponse, RateLimited } from '@src/SpotifyApi'
 import { Cause, Effect, Exit, Option, Schema } from 'effect'
 import { ParseError } from 'effect/ParseResult'
 
