@@ -18,36 +18,138 @@
 import { Command } from '@effect/cli'
 import { Console, Effect } from 'effect'
 import { NodeContext, NodeRuntime } from '@effect/platform-node'
-import { ConfigService } from './config'
+import { ConfigService, TokenDataSchema, isTokenExpired } from './config'
 import { FetchHttpClient } from '@effect/platform'
 import { SpotifyApi } from './SpotifyApi'
+import { loadSpotifyConfig, OAUTH_CONSTANTS } from './environment'
+import { OAuthService } from './OAuthService'
+import { CryptoService } from './CryptoService'
+import { BrowserService } from './BrowserService'
 
 /**
  * Authentication Command
  *
- * Handles the OAuth flow with Spotify to obtain access and refresh tokens.
- * This command will:
- * 1. Launch a browser window for Spotify OAuth
- * 2. Start a local server to receive the callback
- * 3. Exchange authorization code for tokens
- * 4. Store tokens securely in ~/.spotify-cli/spotify.json
+ * Handles the complete OAuth flow with Spotify to obtain access and refresh tokens.
+ * This command implements the full OAuth 2.0 Authorization Code flow with PKCE:
+ * 1. Load environment configuration (client ID, secret, redirect URI)
+ * 2. Check for existing valid tokens
+ * 3. Launch browser window for Spotify OAuth authorization
+ * 4. Start local server to receive the OAuth callback
+ * 5. Exchange authorization code for access and refresh tokens
+ * 6. Store tokens securely in ~/.spotify-cli/spotify.json
+ * 7. Display success confirmation to user
  *
  * Usage: spotify-cli auth
  */
 const authCommand = Command.make('auth', {}, () =>
   Effect.gen(function* () {
     const configService = yield* ConfigService
+    const oauthService = yield* OAuthService
 
-    yield* Console.log('Authentication command - to be implemented')
-    yield* Console.log('Dependencies (ConfigService) are injected properly')
+    yield* Console.log('🎵 Spotify CLI Authentication')
+    yield* Console.log('')
 
-    // Example: Load tokens to demonstrate dependency injection works
+    // Load environment configuration
+    const spotifyConfig = yield* loadSpotifyConfig
+
+    // Check for existing tokens
     const existingTokens = yield* configService.loadTokens()
 
-    // Use Effect-TS pattern matching with Option
-    yield* existingTokens._tag === 'Some'
-      ? Console.log('Found existing tokens - user is already authenticated')
-      : Console.log('No tokens found - user needs to authenticate')
+    if (existingTokens._tag === 'Some') {
+      // Check if existing tokens are still valid
+      if (!isTokenExpired(existingTokens.value)) {
+        yield* Console.log('✅ You are already authenticated with Spotify!')
+        yield* Console.log('')
+        yield* Console.log('Your access token is still valid.')
+        yield* Console.log(
+          'Use `spotify-cli me` to view your profile or `spotify-cli playlists` to see your playlists.'
+        )
+        return
+      } else {
+        yield* Console.log('⚠️  Your existing tokens have expired.')
+        yield* Console.log('Starting fresh authentication...')
+        yield* Console.log('')
+      }
+    } else {
+      yield* Console.log('🔐 No existing authentication found.')
+      yield* Console.log('Starting OAuth flow with Spotify...')
+      yield* Console.log('')
+    }
+
+    // Start OAuth flow
+    yield* Console.log(`🌐 Opening browser for Spotify authentication...`)
+    yield* Console.log(
+      `📡 Starting local server on http://localhost:${OAUTH_CONSTANTS.DEFAULT_PORT}${OAUTH_CONSTANTS.CALLBACK_PATH}`
+    )
+    yield* Console.log('')
+    yield* Console.log('Please complete the authentication in your browser.')
+    yield* Console.log(
+      "If the browser doesn't open automatically, you'll see the URL to visit manually."
+    )
+    yield* Console.log('')
+
+    // Execute complete OAuth flow
+    const tokens = yield* oauthService.completeFlow(spotifyConfig).pipe(
+      Effect.catchAll((error) =>
+        Effect.gen(function* () {
+          if (error._tag === 'OAuthError') {
+            yield* Console.log('❌ Authentication failed:')
+            yield* Console.log(`   ${error.message}`)
+            yield* Console.log('')
+            yield* Console.log('Please try running `spotify-cli auth` again.')
+            if (error.cause !== undefined) {
+              yield* Console.log(`   Debug info: ${String(error.cause)}`)
+            }
+          } else {
+            yield* Console.log('❌ Configuration error:')
+            yield* Console.log(`   ${String(error)}`)
+          }
+          return yield* Effect.fail(error)
+        })
+      )
+    )
+
+    // Calculate expiration time (tokens typically expire in 1 hour)
+    const tokenResponse = tokens as {
+      access_token: string
+      refresh_token: string
+      expires_in: number
+    }
+    const expiresAt = Date.now() + tokenResponse.expires_in * 1000
+
+    // Create token data structure
+    const tokenData = TokenDataSchema.make({
+      accessToken: tokenResponse.access_token,
+      refreshToken: tokenResponse.refresh_token,
+      expiresAt
+    })
+
+    // Store tokens securely
+    yield* configService.saveTokens(tokenData).pipe(
+      Effect.catchTag('ConfigWriteError', (error) =>
+        Effect.gen(function* () {
+          yield* Console.log('❌ Failed to save authentication tokens:')
+          yield* Console.log(`   ${error.message}`)
+          yield* Console.log('')
+          yield* Console.log('Authentication was successful, but tokens could not be saved.')
+          yield* Console.log('Please check file permissions and try again.')
+          return yield* Effect.fail(error)
+        })
+      )
+    )
+
+    // Success message
+    yield* Console.log('✅ Authentication successful!')
+    yield* Console.log('')
+    yield* Console.log('🎉 You are now authenticated with Spotify.')
+    yield* Console.log(`🔑 Tokens saved securely to: ~/.spotify-cli/spotify.json`)
+    yield* Console.log(`⏰ Access token expires: ${new Date(expiresAt).toLocaleString()}`)
+    yield* Console.log('')
+    yield* Console.log('Next steps:')
+    yield* Console.log('  • Run `spotify-cli me` to view your profile')
+    yield* Console.log('  • Run `spotify-cli playlists` to see your playlists')
+    yield* Console.log('')
+    yield* Console.log('Happy listening! 🎶')
   })
 )
 
@@ -154,10 +256,14 @@ const cli = Command.run(mainCommand, {
  *
  * Following the coding guide pattern: "Effect.Service provides a Default property"
  */
-cli(process.argv).pipe(
-  Effect.provide(ConfigService.Default),
-  Effect.provide(SpotifyApi.Default),
-  Effect.provide(FetchHttpClient.layer),
-  Effect.provide(NodeContext.layer),
-  NodeRuntime.runMain
+NodeRuntime.runMain(
+  cli(process.argv).pipe(
+    Effect.provide(ConfigService.Default),
+    Effect.provide(SpotifyApi.Default),
+    Effect.provide(OAuthService.Default),
+    Effect.provide(CryptoService.Default),
+    Effect.provide(BrowserService.Default),
+    Effect.provide(FetchHttpClient.layer),
+    Effect.provide(NodeContext.layer)
+  )
 )

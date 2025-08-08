@@ -4,7 +4,8 @@ module.exports = {
   testEnvironment: 'node',
   moduleNameMapper: {
     '^@src/(.*)$': '<rootDir>/src/$1',
-    '^@test/(.*)$': '<rootDir>/test/$1'
+    '^@test/(.*)$': '<rootDir>/test/$1',
+    '^open$': '<rootDir>/test/__mocks__/open.js'
   },
   testMatch: ['**/*.test.ts'],
   transform: {
