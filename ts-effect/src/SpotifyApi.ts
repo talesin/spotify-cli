@@ -333,6 +333,61 @@ export const exchangeCodeForTokens =
     )
 
 /**
+ * Exchange Authorization Code for Tokens with PKCE
+ *
+ * Exchanges an authorization code received from Spotify's OAuth callback
+ * for access and refresh tokens using PKCE flow. This includes the code_verifier
+ * parameter required when using PKCE (Proof Key for Code Exchange).
+ *
+ * @param httpClient - HTTP client instance for making the request
+ * @param clientId - Spotify application client ID
+ * @param clientSecret - Spotify application client secret
+ * @param code - Authorization code from OAuth callback
+ * @param redirectUri - Must match the redirect URI used in authorization
+ * @param codeVerifier - PKCE code verifier (original random string)
+ * @returns Effect that yields token response or fails with SpotifyApiError
+ *
+ * @see https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow
+ */
+export const exchangeCodeForTokensWithPKCE =
+  (httpClient: HttpClient.HttpClient) =>
+  (clientId: string, clientSecret: string, code: string, redirectUri: string, codeVerifier: string) =>
+    Effect.gen(function* () {
+      const request = createTokenExchangeRequest(clientId, clientSecret, {
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier
+      })
+
+      const response = yield* httpClient.execute(request)
+
+      if (response.status !== 200) {
+        return yield* Effect.fail(
+          new NetworkError({
+            message: `Token exchange failed: ${response.status}`
+          })
+        )
+      }
+
+      const json = yield* response.json
+      return json as {
+        access_token: string
+        refresh_token: string
+        expires_in: number
+      }
+    }).pipe(
+      Effect.mapError((error): SpotifyApiError => {
+        if (error instanceof NetworkError) {
+          return error
+        }
+        return new NetworkError({
+          message: `Failed to exchange authorization code for tokens: ${error}`
+        })
+      })
+    )
+
+/**
  * Spotify API Service
  *
  * Effect Service that provides HTTP operations for Spotify API.
@@ -344,7 +399,8 @@ export class SpotifyApi extends Effect.Service<SpotifyApi>()('SpotifyApi', {
     const httpClient = yield* HttpClient.HttpClient
     return {
       call: spotifyApiCall(httpClient),
-      exchangeCodeForTokens: exchangeCodeForTokens(httpClient)
+      exchangeCodeForTokens: exchangeCodeForTokens(httpClient),
+      exchangeCodeForTokensWithPKCE: exchangeCodeForTokensWithPKCE(httpClient)
     }
   }),
   dependencies: [FetchHttpClient.layer]
@@ -359,6 +415,7 @@ export class SpotifyApi extends Effect.Service<SpotifyApi>()('SpotifyApi', {
 export const TestSpotifyApiLayer = (fn?: {
   call?: SpotifyApi['call']
   exchangeCodeForTokens?: SpotifyApi['exchangeCodeForTokens']
+  exchangeCodeForTokensWithPKCE?: SpotifyApi['exchangeCodeForTokensWithPKCE']
 }) =>
   Layer.succeed(
     SpotifyApi,
@@ -367,6 +424,14 @@ export const TestSpotifyApiLayer = (fn?: {
       call: fn?.call ?? (() => Effect.succeed({} as any)), // eslint-disable-line
       exchangeCodeForTokens:
         fn?.exchangeCodeForTokens ??
+        (() =>
+          Effect.succeed({
+            access_token: 'test-token',
+            refresh_token: 'test-refresh',
+            expires_in: 3600
+          })),
+      exchangeCodeForTokensWithPKCE:
+        fn?.exchangeCodeForTokensWithPKCE ??
         (() =>
           Effect.succeed({
             access_token: 'test-token',

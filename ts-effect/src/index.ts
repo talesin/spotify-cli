@@ -25,6 +25,7 @@ import { loadSpotifyConfig, OAUTH_CONSTANTS } from './environment'
 import { OAuthService } from './OAuthService'
 import { CryptoService } from './CryptoService'
 import { BrowserService } from './BrowserService'
+import { HttpServerService } from './HttpServerService'
 
 /**
  * Authentication Command
@@ -87,22 +88,55 @@ const authCommand = Command.make('auth', {}, () =>
       "If the browser doesn't open automatically, you'll see the URL to visit manually."
     )
     yield* Console.log('')
+    yield* Console.log('⏳ Waiting for authorization (this may take up to 5 minutes)...')
+    yield* Console.log('   Please authorize the application in your browser to continue.')
+    yield* Console.log('')
 
     // Execute complete OAuth flow
     const tokens = yield* oauthService.completeFlow(spotifyConfig).pipe(
+      Effect.tap(() =>
+        Console.log('🔄 Processing authorization code and exchanging for tokens...')
+      ),
       Effect.catchAll((error) =>
         Effect.gen(function* () {
           if (error._tag === 'OAuthError') {
             yield* Console.log('❌ Authentication failed:')
             yield* Console.log(`   ${error.message}`)
             yield* Console.log('')
+
+            // Provide specific guidance based on error type
+            if (error.message.includes('timeout')) {
+              yield* Console.log('💡 Tip: The authentication timed out after 5 minutes.')
+              yield* Console.log('   Please try again and complete the authorization more quickly.')
+            } else if (
+              error.message.includes('user denied') ||
+              error.message.includes('access_denied')
+            ) {
+              yield* Console.log('💡 Tip: You need to authorize the application to continue.')
+              yield* Console.log(
+                '   Please try again and click "Agree" on the Spotify authorization page.'
+              )
+            } else if (error.message.includes('callback server')) {
+              yield* Console.log('💡 Tip: There was an issue with the local callback server.')
+              yield* Console.log(
+                '   Make sure port 3000 is available or check your firewall settings.'
+              )
+            }
+
+            yield* Console.log('')
             yield* Console.log('Please try running `spotify-cli auth` again.')
+
             if (error.cause !== undefined) {
               yield* Console.log(`   Debug info: ${String(error.cause)}`)
             }
           } else {
             yield* Console.log('❌ Configuration error:')
             yield* Console.log(`   ${String(error)}`)
+            yield* Console.log('')
+            yield* Console.log('💡 Tip: Please check your environment variables:')
+            yield* Console.log('   - SPOTIFY_CLIENT_ID')
+            yield* Console.log('   - SPOTIFY_CLIENT_SECRET')
+            yield* Console.log('   - SPOTIFY_REDIRECT_URI')
           }
           return yield* Effect.fail(error)
         })
@@ -170,17 +204,40 @@ const authCommand = Command.make('auth', {}, () =>
 const meCommand = Command.make('me', {}, () =>
   Effect.gen(function* () {
     const configService = yield* ConfigService
-    const httpService = yield* SpotifyApi
 
-    yield* Console.log('User profile command - to be implemented')
-    yield* Console.log('Dependencies (ConfigService and HttpService) are injected properly')
+    yield* Console.log('👤 Spotify User Profile')
+    yield* Console.log('')
 
-    // Example: Demonstrate service availability
+    // Check for authentication
     const existingTokens = yield* configService.loadTokens()
-    yield* Console.log(
-      `Config service working: ${existingTokens._tag === 'Some' ? 'Found tokens' : 'No tokens'}`
-    )
-    yield* Console.log(`HTTP service available: ${typeof httpService.call === 'function'}`)
+
+    if (existingTokens._tag === 'None') {
+      yield* Console.log('❌ Not authenticated')
+      yield* Console.log('')
+      yield* Console.log('You need to authenticate with Spotify first.')
+      yield* Console.log('Run `spotify-cli auth` to get started.')
+      return
+    }
+
+    // Check if tokens are expired
+    if (isTokenExpired(existingTokens.value)) {
+      yield* Console.log('⚠️  Authentication expired')
+      yield* Console.log('')
+      yield* Console.log('Your tokens have expired. Please re-authenticate.')
+      yield* Console.log('Run `spotify-cli auth` to refresh your authentication.')
+      return
+    }
+
+    yield* Console.log('🚧 Feature coming soon!')
+    yield* Console.log('')
+    yield* Console.log('The user profile feature is currently under development.')
+    yield* Console.log('This will display your Spotify profile information including:')
+    yield* Console.log('  • Display name')
+    yield* Console.log('  • Email address')
+    yield* Console.log('  • Country')
+    yield* Console.log('  • Subscription type')
+    yield* Console.log('')
+    yield* Console.log('Stay tuned for the next update! 🎵')
   })
 )
 
@@ -201,19 +258,40 @@ const meCommand = Command.make('me', {}, () =>
 const playlistsCommand = Command.make('playlists', {}, () =>
   Effect.gen(function* () {
     const configService = yield* ConfigService
-    const httpService = yield* SpotifyApi
 
-    yield* Console.log('Playlists command - to be implemented')
-    yield* Console.log('Dependencies (ConfigService and HttpService) are injected properly')
+    yield* Console.log('🎵 Your Spotify Playlists')
+    yield* Console.log('')
 
-    // Example: Demonstrate service availability
+    // Check for authentication
     const existingTokens = yield* configService.loadTokens()
-    yield* Console.log(
-      `Config service working: ${existingTokens._tag === 'Some' ? 'Found tokens' : 'No tokens'}`
-    )
-    yield* Console.log(
-      `HTTP service available: ${typeof httpService.exchangeCodeForTokens === 'function'}`
-    )
+
+    if (existingTokens._tag === 'None') {
+      yield* Console.log('❌ Not authenticated')
+      yield* Console.log('')
+      yield* Console.log('You need to authenticate with Spotify first.')
+      yield* Console.log('Run `spotify-cli auth` to get started.')
+      return
+    }
+
+    // Check if tokens are expired
+    if (isTokenExpired(existingTokens.value)) {
+      yield* Console.log('⚠️  Authentication expired')
+      yield* Console.log('')
+      yield* Console.log('Your tokens have expired. Please re-authenticate.')
+      yield* Console.log('Run `spotify-cli auth` to refresh your authentication.')
+      return
+    }
+
+    yield* Console.log('🚧 Feature coming soon!')
+    yield* Console.log('')
+    yield* Console.log('The playlists feature is currently under development.')
+    yield* Console.log('This will display your Spotify playlists with:')
+    yield* Console.log('  • Playlist names')
+    yield* Console.log('  • Number of tracks')
+    yield* Console.log('  • Public/private status')
+    yield* Console.log('  • Creation date')
+    yield* Console.log('')
+    yield* Console.log('Stay tuned for the next update! 🎶')
   })
 )
 
@@ -263,6 +341,7 @@ NodeRuntime.runMain(
     Effect.provide(OAuthService.Default),
     Effect.provide(CryptoService.Default),
     Effect.provide(BrowserService.Default),
+    Effect.provide(HttpServerService.Default),
     Effect.provide(FetchHttpClient.layer),
     Effect.provide(NodeContext.layer)
   )

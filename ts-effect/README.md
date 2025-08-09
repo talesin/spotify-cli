@@ -36,7 +36,7 @@ TypeScript/Effect CLI app for interacting with Spotify.
 
 ---
 
-### 🔒 Auth with Spotify
+### ✅ Phase 3: Auth with Spotify - COMPLETED
 
 - [x] ✅ Register your app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
 - [x] ✅ Set up redirect URI for OAuth flow - `http://127.0.0.1:3000/`
@@ -44,18 +44,22 @@ TypeScript/Effect CLI app for interacting with Spotify.
   - [x] ✅ **CryptoService**: PKCE challenge generation with secure random values
   - [x] ✅ **BrowserService**: Cross-platform browser launching for OAuth flow
   - [x] ✅ **OAuthService**: Complete OAuth service with dependency injection
+  - [x] ✅ **HttpServerService**: HTTP server wrapper for OAuth callbacks
+  - [x] ✅ **CallbackServer**: OAuth callback handling with HTML responses
   - [x] ✅ Generate authorization URL with correct scopes (`user-read-email`, `playlist-read-private`, etc.)
   - [x] ✅ Launch browser to start the OAuth flow
-  - [ ] **Run a local HTTP server for redirect response** (currently mocked - needs real server)
+  - [x] ✅ **Run a local HTTP server for redirect response** (full implementation complete)
   - [x] ✅ Parse authorization code from the redirect URI
   - [x] ✅ Exchange authorization code for access + refresh tokens
   - [x] ✅ Store tokens securely in local storage (`~/.spotify-cli/spotify.json`)
-  - [x] ✅ **Comprehensive test coverage** (99 passing tests)
-- [ ] Show success or error message after auth completes (pending server implementation)
+  - [x] ✅ **Comprehensive test coverage** (115 passing tests)
+- [x] ✅ **Show success or error message after auth completes** (comprehensive UX implemented)
+- [x] ✅ **Enhanced Error Handling**: Context-sensitive error messages and troubleshooting tips
+- [x] ✅ **User Experience**: Progress indicators, timeout handling, and helpful guidance
 
 ---
 
-### 👤 Get User Profile
+### Phase 4: Get User Profile
 
 - [ ] Implement `spotify-cli me` command
 - [ ] Load access token from local storage
@@ -70,7 +74,7 @@ TypeScript/Effect CLI app for interacting with Spotify.
 
 ---
 
-### 🎶 Get User Playlists
+### Phase 5: Get User Playlists
 
 - [ ] Implement `spotify-cli playlists` command
 - [ ] Load access token from local storage
