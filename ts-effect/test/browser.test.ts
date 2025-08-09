@@ -67,7 +67,7 @@ describe('BrowserService', () => {
         const testLayer = TestBrowserServiceLayer()
         const testUrls = [
           'https://accounts.spotify.com/authorize?client_id=test',
-          'http://localhost:3000/callback',
+          'http://127.0.0.1:3000/callback',
           'https://example.com/path?param=value&other=test',
           'https://example.com/path#fragment'
         ]

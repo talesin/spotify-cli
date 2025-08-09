@@ -39,7 +39,7 @@ export class BrowserError extends Data.TaggedError('BrowserError')<{
  * @param url - URL to open in the browser
  * @returns Effect that succeeds when browser launches or fails with BrowserError
  */
-export const launchBrowserImpl = (url: string) =>
+export const launchBrowser = (url: string) =>
   Effect.tryPromise({
     try: () => open(url),
     catch: (error) =>
@@ -60,7 +60,7 @@ export class BrowserService extends Effect.Service<BrowserService>()('BrowserSer
     /**
      * Launch the user's default browser to the specified URL
      */
-    launch: launchBrowserImpl
+    launch: launchBrowser
   })
 }) {}
 

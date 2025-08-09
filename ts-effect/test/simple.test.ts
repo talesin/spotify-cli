@@ -11,7 +11,7 @@ import {
   ConfigParseError,
   ConfigWriteError,
   isTokenExpired
-} from '@src/config'
+} from '@src/ConfigService'
 
 import { Unauthorized, NetworkError, InvalidResponse, RateLimited } from '@src/SpotifyApi'
 import { Cause, Effect, Exit, Option, Schema } from 'effect'

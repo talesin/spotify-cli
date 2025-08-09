@@ -18,7 +18,7 @@
 import { Command } from '@effect/cli'
 import { Console, Effect } from 'effect'
 import { NodeContext, NodeRuntime } from '@effect/platform-node'
-import { ConfigService, TokenDataSchema, isTokenExpired } from './config'
+import { ConfigService, TokenDataSchema, isTokenExpired } from './ConfigService'
 import { FetchHttpClient } from '@effect/platform'
 import { SpotifyApi } from './SpotifyApi'
 import { loadSpotifyConfig, OAUTH_CONSTANTS } from './environment'

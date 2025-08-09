@@ -9,12 +9,12 @@
  * Required Environment Variables:
  * - SPOTIFY_CLIENT_ID: The application's client ID from Spotify Developer Dashboard
  * - SPOTIFY_CLIENT_SECRET: The application's client secret (keep secure)
- * - SPOTIFY_REDIRECT_URI: The OAuth callback URL (e.g., http://localhost:3000/callback)
+ * - SPOTIFY_REDIRECT_URI: The OAuth callback URL (e.g., http://127.0.0.1:3000/callback)
  *
  * @module Environment
  */
 
-import { Data, Effect, Schema } from 'effect'
+import { Config, Data, Effect, Redacted, Schema } from 'effect'
 
 /**
  * Environment Configuration Error
@@ -44,11 +44,29 @@ export const SpotifyConfigSchema = Schema.Struct({
 export type SpotifyConfig = Schema.Schema.Type<typeof SpotifyConfigSchema>
 
 /**
+ * Individual Configuration Descriptors
+ *
+ * These describe how to load and validate each environment variable
+ * using Effect-TS Config patterns for type safety and composability.
+ */
+const clientIdConfig = Config.string('SPOTIFY_CLIENT_ID').pipe(
+  Config.withDescription('The application client ID from Spotify Developer Dashboard')
+)
+
+const clientSecretConfig = Config.redacted('SPOTIFY_CLIENT_SECRET').pipe(
+  Config.withDescription('The application client secret (keep secure!)')
+)
+
+const redirectUriConfig = Config.string('SPOTIFY_REDIRECT_URI').pipe(
+  Config.withDescription('The OAuth callback URL (e.g., http://127.0.0.1:3000/callback)')
+)
+
+/**
  * Load Spotify Configuration from Environment
  *
- * Reads and validates Spotify OAuth credentials from environment variables.
- * This function checks for the presence of required variables and ensures
- * they meet basic validation requirements (non-empty strings).
+ * Reads and validates Spotify OAuth credentials from environment variables
+ * using Effect-TS Config patterns. This provides type-safe configuration
+ * loading with built-in validation and helpful error messages.
  *
  * Environment Variables:
  * - SPOTIFY_CLIENT_ID: Required client ID from Spotify app registration
@@ -59,43 +77,36 @@ export type SpotifyConfig = Schema.Schema.Type<typeof SpotifyConfigSchema>
  *
  * @example
  * ```typescript
- * const config = yield* loadSpotifyConfig()
+ * const config = yield* loadSpotifyConfig
  * console.log(`Using client ID: ${config.clientId}`)
  * ```
  */
 export const loadSpotifyConfig = Effect.gen(function* () {
-  const clientId = process.env['SPOTIFY_CLIENT_ID']
-  const clientSecret = process.env['SPOTIFY_CLIENT_SECRET']
-  const redirectUri = process.env['SPOTIFY_REDIRECT_URI']
-
-  const missingVars: string[] = []
-
-  if (clientId === undefined || clientId === '') missingVars.push('SPOTIFY_CLIENT_ID')
-  if (clientSecret === undefined || clientSecret === '') missingVars.push('SPOTIFY_CLIENT_SECRET')
-  if (redirectUri === undefined || redirectUri === '') missingVars.push('SPOTIFY_REDIRECT_URI')
-
-  if (missingVars.length > 0) {
-    return yield* Effect.fail(
-      new EnvironmentError({
-        message:
-          `Missing required environment variables: ${missingVars.join(', ')}\n\n` +
-          'Please set the following environment variables:\n' +
-          '- SPOTIFY_CLIENT_ID: Your Spotify app client ID\n' +
-          '- SPOTIFY_CLIENT_SECRET: Your Spotify app client secret\n' +
-          '- SPOTIFY_REDIRECT_URI: OAuth callback URI (e.g., http://localhost:3000/callback)\n\n' +
-          'You can get these values from: https://developer.spotify.com/dashboard',
-        missingVars
-      })
+  const configResult = yield* Config.all({
+    clientId: clientIdConfig,
+    clientSecret: clientSecretConfig,
+    redirectUri: redirectUriConfig
+  }).pipe(
+    Effect.mapError(
+      (error) =>
+        new EnvironmentError({
+          message:
+            `Missing or invalid Spotify configuration: ${error.message}\n\n` +
+            'Please set the following environment variables:\n' +
+            '- SPOTIFY_CLIENT_ID: Your Spotify app client ID\n' +
+            '- SPOTIFY_CLIENT_SECRET: Your Spotify app client secret\n' +
+            '- SPOTIFY_REDIRECT_URI: OAuth callback URI (e.g., http://127.0.0.1:3000)\n\n' +
+            'You can get these values from: https://developer.spotify.com/dashboard'
+        })
     )
-  }
+  )
 
-  const rawConfig = {
-    clientId,
-    clientSecret,
-    redirectUri
-  }
-
-  return yield* Schema.decodeUnknown(SpotifyConfigSchema)(rawConfig).pipe(
+  // Validate and return the final configuration
+  return yield* Schema.decodeUnknown(SpotifyConfigSchema)({
+    clientId: configResult.clientId,
+    clientSecret: Redacted.value(configResult.clientSecret),
+    redirectUri: configResult.redirectUri
+  }).pipe(
     Effect.mapError(
       (error) =>
         new EnvironmentError({

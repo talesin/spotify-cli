@@ -26,10 +26,10 @@ TypeScript/Effect CLI app for interacting with Spotify.
 
 - [x] ✅ **OAuth Module Refactoring for Better Testability**
   - [x] ✅ Created CryptoService wrapper around Node.js crypto module
-  - [x] ✅ Created BrowserService wrapper for browser launching 
+  - [x] ✅ Created BrowserService wrapper for browser launching
   - [x] ✅ Refactored OAuth module into Effect service with dependency injection
   - [x] ✅ Created comprehensive tests for CryptoService (32 tests)
-  - [x] ✅ Created comprehensive tests for BrowserService (33 tests) 
+  - [x] ✅ Created comprehensive tests for BrowserService (33 tests)
   - [x] ✅ Updated OAuth tests to use service-based testing patterns
   - [x] ✅ Updated index.ts to use new OAuth service architecture
   - [x] ✅ Improved separation of concerns and testability
@@ -39,7 +39,7 @@ TypeScript/Effect CLI app for interacting with Spotify.
 ### 🔒 Auth with Spotify
 
 - [x] ✅ Register your app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-- [x] ✅ Set up redirect URI for OAuth flow - `http://localhost:3000/`
+- [x] ✅ Set up redirect URI for OAuth flow - `http://127.0.0.1:3000/`
 - [x] ✅ **Implement OAuth Infrastructure with Effect-TS Services**
   - [x] ✅ **CryptoService**: PKCE challenge generation with secure random values
   - [x] ✅ **BrowserService**: Cross-platform browser launching for OAuth flow

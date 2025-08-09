@@ -21,6 +21,7 @@ import { SpotifyConfig, SPOTIFY_SCOPES, OAUTH_CONSTANTS } from './environment'
 import { SpotifyApi } from './SpotifyApi'
 import { CryptoService } from './CryptoService'
 import { BrowserService } from './BrowserService'
+import { ChildProcess } from 'child_process'
 
 /**
  * OAuth Flow Error
@@ -79,7 +80,7 @@ export interface OAuthCallback {
  * @param crypto - CryptoService instance for secure operations
  * @returns Effect that yields PKCEChallenge or fails with OAuthError
  */
-const generatePKCEChallengeImpl = (crypto: CryptoService) =>
+const generatePKCEChallenge = (crypto: CryptoService) =>
   Effect.gen(function* () {
     try {
       // Generate 128-character base64url string for code verifier
@@ -114,7 +115,7 @@ const generatePKCEChallengeImpl = (crypto: CryptoService) =>
  * @param crypto - CryptoService instance for secure operations
  * @returns Effect that yields random state string or fails with OAuthError
  */
-const generateStateImpl = (crypto: CryptoService) =>
+const generateState = (crypto: CryptoService) =>
   Effect.gen(function* () {
     try {
       return yield* crypto.generateRandomHex(16)
@@ -139,7 +140,7 @@ const generateStateImpl = (crypto: CryptoService) =>
  * @param oauthState - OAuth state with PKCE and state parameters
  * @returns Complete authorization URL ready for browser redirect
  */
-const buildAuthorizationUrlImpl = (config: SpotifyConfig, oauthState: OAuthState): string => {
+const buildAuthorizationUrl = (config: SpotifyConfig, oauthState: OAuthState): string => {
   const params = new URLSearchParams({
     response_type: OAUTH_CONSTANTS.RESPONSE_TYPE,
     client_id: config.clientId,
@@ -163,18 +164,16 @@ const buildAuthorizationUrlImpl = (config: SpotifyConfig, oauthState: OAuthState
  * @param url - Authorization URL to open
  * @returns Effect that attempts to launch browser or fails with OAuthError
  */
-const launchBrowserImpl = (browser: BrowserService) => (url: string) =>
-  Effect.gen(function* () {
-    yield* browser.launch(url).pipe(
-      Effect.mapError(
-        (browserError) =>
-          new OAuthError({
-            message: `Failed to launch browser. Please manually open: ${url}`,
-            cause: browserError
-          })
-      )
+const launchBrowser = (browser: BrowserService) => (url: string) =>
+  browser.launch(url).pipe(
+    Effect.mapError(
+      (browserError) =>
+        new OAuthError({
+          message: `Failed to launch browser. Please manually open: ${url}`,
+          cause: browserError
+        })
     )
-  })
+  )
 
 /**
  * Parse OAuth Callback Implementation
@@ -186,7 +185,7 @@ const launchBrowserImpl = (browser: BrowserService) => (url: string) =>
  * @param request - HTTP request from OAuth callback
  * @returns Effect that yields OAuthCallback or fails with OAuthError
  */
-const parseOAuthCallbackImpl = (request: HttpServerRequest.HttpServerRequest) =>
+const parseOAuthCallback = (request: HttpServerRequest.HttpServerRequest) =>
   Effect.gen(function* () {
     const url = yield* Effect.try(() => new URL(request.url, 'http://localhost'))
 
@@ -224,7 +223,7 @@ const parseOAuthCallbackImpl = (request: HttpServerRequest.HttpServerRequest) =>
  * @param expectedState - Expected state parameter for validation
  * @returns Effect that yields OAuthCallback or fails with OAuthError
  */
-const startCallbackServerImpl = (_config: SpotifyConfig, expectedState: string) =>
+const startCallbackServer = (_config: SpotifyConfig, expectedState: string) =>
   Effect.gen(function* () {
     return yield* Effect.succeed({
       code: 'mock-auth-code',
@@ -246,21 +245,21 @@ const startCallbackServerImpl = (_config: SpotifyConfig, expectedState: string) 
  * @param config - Spotify OAuth configuration
  * @returns Effect that yields access/refresh tokens or fails with OAuthError
  */
-const completeOAuthFlowImpl =
+const completeOAuthFlow =
   (crypto: CryptoService, browser: BrowserService, spotifyApi: SpotifyApi) =>
   (config: SpotifyConfig) =>
     Effect.gen(function* () {
       // Generate PKCE challenge and state
-      const pkce = yield* generatePKCEChallengeImpl(crypto)
-      const state = yield* generateStateImpl(crypto)
+      const pkce = yield* generatePKCEChallenge(crypto)
+      const state = yield* generateState(crypto)
       const oauthState: OAuthState = { pkce, state }
 
       // Build authorization URL and launch browser
-      const authUrl = buildAuthorizationUrlImpl(config, oauthState)
-      yield* launchBrowserImpl(browser)(authUrl)
+      const authUrl = buildAuthorizationUrl(config, oauthState)
+      yield* launchBrowser(browser)(authUrl)
 
       // Start callback server and wait for authorization code
-      const callback = yield* startCallbackServerImpl(config, state)
+      const callback = yield* startCallbackServer(config, state)
 
       // Exchange authorization code for tokens using SpotifyApi
       const tokens = yield* spotifyApi.exchangeCodeForTokens(
@@ -290,38 +289,38 @@ export class OAuthService extends Effect.Service<OAuthService>()('OAuthService',
       /**
        * Generate PKCE challenge pair for secure OAuth flow
        */
-      generatePKCEChallenge: () => generatePKCEChallengeImpl(crypto),
+      generatePKCEChallenge: () => generatePKCEChallenge(crypto),
 
       /**
        * Generate random state parameter for CSRF protection
        */
-      generateState: () => generateStateImpl(crypto),
+      generateState: () => generateState(crypto),
 
       /**
        * Build authorization URL with all required OAuth parameters
        */
       buildAuthorizationUrl: (config: SpotifyConfig, oauthState: OAuthState) =>
-        Effect.succeed(buildAuthorizationUrlImpl(config, oauthState)),
+        Effect.succeed(buildAuthorizationUrl(config, oauthState)),
 
       /**
        * Launch browser to authorization URL
        */
-      launchBrowser: launchBrowserImpl(browser),
+      launchBrowser: launchBrowser(browser),
 
       /**
        * Parse OAuth callback request for authorization code and state
        */
-      parseOAuthCallback: parseOAuthCallbackImpl,
+      parseOAuthCallback: parseOAuthCallback,
 
       /**
        * Start callback server to handle OAuth redirect (mock implementation)
        */
-      startCallbackServer: startCallbackServerImpl,
+      startCallbackServer: startCallbackServer,
 
       /**
        * Complete full OAuth authentication flow
        */
-      completeFlow: completeOAuthFlowImpl(crypto, browser, spotifyApi)
+      completeFlow: completeOAuthFlow(crypto, browser, spotifyApi)
     }
   }),
   dependencies: [CryptoService.Default, BrowserService.Default, SpotifyApi.Default]
@@ -334,23 +333,13 @@ export class OAuthService extends Effect.Service<OAuthService>()('OAuthService',
  * during testing. This enables predictable testing of OAuth flows.
  */
 export const TestOAuthServiceLayer = (mockFunctions?: {
-  generatePKCEChallenge?: () => Effect.Effect<PKCEChallenge, OAuthError>
-  generateState?: () => Effect.Effect<string, OAuthError>
-  buildAuthorizationUrl?: (config: SpotifyConfig, state: OAuthState) => Effect.Effect<string, never>
-  launchBrowser?: (url: string) => Effect.Effect<void, OAuthError>
-  parseOAuthCallback?: (
-    request: HttpServerRequest.HttpServerRequest
-  ) => Effect.Effect<OAuthCallback, OAuthError>
-  startCallbackServer?: (
-    config: SpotifyConfig,
-    state: string
-  ) => Effect.Effect<OAuthCallback, never>
-  completeFlow?: (
-    config: SpotifyConfig
-  ) => Effect.Effect<
-    { access_token: string; refresh_token: string; expires_in: number },
-    OAuthError
-  >
+  generatePKCEChallenge?: OAuthService['generatePKCEChallenge']
+  generateState?: OAuthService['generateState']
+  buildAuthorizationUrl?: OAuthService['buildAuthorizationUrl']
+  launchBrowser?: OAuthService['launchBrowser']
+  parseOAuthCallback?: OAuthService['parseOAuthCallback']
+  startCallbackServer?: OAuthService['startCallbackServer']
+  completeFlow?: OAuthService['completeFlow']
 }) =>
   Layer.succeed(
     OAuthService,
@@ -368,7 +357,9 @@ export const TestOAuthServiceLayer = (mockFunctions?: {
       buildAuthorizationUrl:
         mockFunctions?.buildAuthorizationUrl ??
         ((_config, _state) => Effect.succeed('https://accounts.spotify.com/authorize?mock=true')),
-      launchBrowser: mockFunctions?.launchBrowser ?? ((_url) => Effect.succeed(undefined)),
+      launchBrowser:
+        mockFunctions?.launchBrowser ??
+        ((_url) => Effect.succeed(undefined as unknown as ChildProcess)),
       parseOAuthCallback:
         mockFunctions?.parseOAuthCallback ??
         ((_request) => Effect.succeed({ code: 'mock-code', state: 'mock-state' })),
@@ -385,44 +376,3 @@ export const TestOAuthServiceLayer = (mockFunctions?: {
           }))
     })
   )
-
-// Export backward-compatible functions for existing code
-export const generatePKCEChallenge = Effect.gen(function* () {
-  const oauthService = yield* OAuthService
-  return yield* oauthService.generatePKCEChallenge()
-})
-
-export const generateState = Effect.gen(function* () {
-  const oauthService = yield* OAuthService
-  return yield* oauthService.generateState()
-})
-
-export const buildAuthorizationUrl = (config: SpotifyConfig, oauthState: OAuthState) =>
-  Effect.gen(function* () {
-    const oauthService = yield* OAuthService
-    return yield* oauthService.buildAuthorizationUrl(config, oauthState)
-  })
-
-export const launchBrowser = (url: string) =>
-  Effect.gen(function* () {
-    const oauthService = yield* OAuthService
-    return yield* oauthService.launchBrowser(url)
-  })
-
-export const parseOAuthCallback = (request: HttpServerRequest.HttpServerRequest) =>
-  Effect.gen(function* () {
-    const oauthService = yield* OAuthService
-    return yield* oauthService.parseOAuthCallback(request)
-  })
-
-export const startCallbackServer = (config: SpotifyConfig, expectedState: string) =>
-  Effect.gen(function* () {
-    const oauthService = yield* OAuthService
-    return yield* oauthService.startCallbackServer(config, expectedState)
-  })
-
-export const completeOAuthFlow = (config: SpotifyConfig) =>
-  Effect.gen(function* () {
-    const oauthService = yield* OAuthService
-    return yield* oauthService.completeFlow(config)
-  })
