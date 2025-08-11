@@ -376,7 +376,7 @@ export const startOAuthCallbackServer =
       const pollForResult = Effect.gen(function* () {
         let attempts = 0
         const maxAttempts = 300 // 5 minutes at 1 second intervals
-        
+
         while (attempts < maxAttempts) {
           const result = yield* Ref.get(resultRef)
           if (result) {
@@ -385,7 +385,7 @@ export const startOAuthCallbackServer =
           yield* Effect.sleep('1 seconds')
           attempts++
         }
-        
+
         return yield* Effect.fail(
           new CallbackServerError({
             message: 'OAuth callback timeout - no response received within the time limit'

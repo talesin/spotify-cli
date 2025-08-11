@@ -24,6 +24,7 @@ import {
   HttpClientRequest,
   HttpClientResponse,
   HttpBody,
+  UrlParams,
   FetchHttpClient
 } from '@effect/platform'
 import { ParseError } from 'effect/ParseResult'
@@ -257,13 +258,12 @@ export const createTokenExchangeRequest = (
   clientSecret: string,
   params: Record<string, string>
 ) => {
-  const body = new URLSearchParams(params)
   const credentials = btoa(`${clientId}:${clientSecret}`)
+  const urlParams = UrlParams.fromInput(params)
 
   return HttpClientRequest.post('https://accounts.spotify.com/api/token').pipe(
     HttpClientRequest.setHeader('Authorization', `Basic ${credentials}`),
-    HttpClientRequest.setHeader('Content-Type', 'application/x-www-form-urlencoded'),
-    HttpClientRequest.setBody(HttpBody.text(body.toString()))
+    HttpClientRequest.setBody(HttpBody.urlParams(urlParams))
   )
 }
 
@@ -351,7 +351,13 @@ export const exchangeCodeForTokens =
  */
 export const exchangeCodeForTokensWithPKCE =
   (httpClient: HttpClient.HttpClient) =>
-  (clientId: string, clientSecret: string, code: string, redirectUri: string, codeVerifier: string) =>
+  (
+    clientId: string,
+    clientSecret: string,
+    code: string,
+    redirectUri: string,
+    codeVerifier: string
+  ) =>
     Effect.gen(function* () {
       const request = createTokenExchangeRequest(clientId, clientSecret, {
         grant_type: 'authorization_code',
@@ -363,9 +369,10 @@ export const exchangeCodeForTokensWithPKCE =
       const response = yield* httpClient.execute(request)
 
       if (response.status !== 200) {
+        const responseText = yield* response.text
         return yield* Effect.fail(
           new NetworkError({
-            message: `Token exchange failed: ${response.status}`
+            message: `Token exchange failed: ${response.status} - ${responseText}`
           })
         )
       }
