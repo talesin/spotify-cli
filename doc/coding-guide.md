@@ -6,10 +6,10 @@ Never overwrite my .envrc file.
 
 # Coding
 
-Use descriptive file names—no abbreviations.
-Use descriptive variable names—no abbreviations.
-Use descriptive function names—no abbreviations.
-Use descriptive class names—no abbreviations.
+Use descriptive file names — no abbreviations.
+Use descriptive variable names — no abbreviations.
+Use descriptive function names — no abbreviations.
+Use descriptive class names — no abbreviations.
 Always check for existing code before writing new code.
 Do not drastically change existing patterns; iterate on them first.
 Always prefer simple solutions.
@@ -26,3 +26,7 @@ Refer to the typescript-coding-guide.md for coding standards.
 # React
 
 Refer to the react-coding-guide.md for coding standards.
+
+# F#
+
+Refer to the fsharp-coding-guide.md for coding standards.
