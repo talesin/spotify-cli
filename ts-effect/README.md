@@ -44,18 +44,18 @@ TypeScript/Effect CLI app for interacting with Spotify.
   - [x] ✅ **CryptoService**: PKCE challenge generation with secure random values
   - [x] ✅ **BrowserService**: Cross-platform browser launching for OAuth flow
   - [x] ✅ **OAuthService**: Complete OAuth service with dependency injection
-  - [x] ✅ **HttpServerService**: HTTP server wrapper for OAuth callbacks
-  - [x] ✅ **CallbackServer**: OAuth callback handling with HTML responses
+  - [x] ✅ **CallbackServer**: OAuth callback handling with HTML responses (HTTP server management at execution boundary)
   - [x] ✅ Generate authorization URL with correct scopes (`user-read-email`, `playlist-read-private`, etc.)
   - [x] ✅ Launch browser to start the OAuth flow
   - [x] ✅ **Run a local HTTP server for redirect response** (full implementation complete)
   - [x] ✅ Parse authorization code from the redirect URI
   - [x] ✅ Exchange authorization code for access + refresh tokens
   - [x] ✅ Store tokens securely in local storage (`~/.spotify-cli/spotify.json`)
-  - [x] ✅ **Comprehensive test coverage** (115 passing tests)
+  - [x] ✅ **Comprehensive test coverage** (99 passing tests)
 - [x] ✅ **Show success or error message after auth completes** (comprehensive UX implemented)
 - [x] ✅ **Enhanced Error Handling**: Context-sensitive error messages and troubleshooting tips
 - [x] ✅ **User Experience**: Progress indicators, timeout handling, and helpful guidance
+- [x] ✅ **Architectural Refinement**: Removed HttpServerService anti-pattern, moved HTTP server creation to execution boundary following proper Effect-TS patterns
 
 ---
 
