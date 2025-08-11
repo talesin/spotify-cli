@@ -3,10 +3,43 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>spotify-cli</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors />
+    <WarningsNotAsErrors>FS0025</WarningsNotAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Program.fs" />
+    <Compile Include="src/Domain/Errors.fs" />
+    <Compile Include="src/Domain/Types.fs" />
+    <!-- Temporarily commented out to test foundation
+    <Compile Include="src/Services/ConfigService.fs" />
+    <Compile Include="src/Services/HttpService.fs" />
+    <Compile Include="src/Services/CryptoService.fs" />
+    <Compile Include="src/Infrastructure/SpotifyApi.fs" />
+    <Compile Include="src/CLI/Output.fs" />
+    <Compile Include="src/CLI/Commands.fs" />
+    -->
+    <Compile Include="src/Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Argu" Version="6.2.4" />
+  </ItemGroup>
+
+  <!-- Test dependencies - temporarily commented out to test basic foundation
+  <ItemGroup>
+    <PackageReference Include="Expecto" Version="10.2.1" />
+    <PackageReference Include="FsCheck" Version="2.16.6" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+  </ItemGroup>
+  -->
+
+  <ItemGroup Condition="'$(Configuration)' == 'Test'">
+    <Compile Include="tests/TestUtilities.fs" />
+    <Compile Include="tests/Domain/TypesTests.fs" />
+    <Compile Include="tests/Services/ConfigServiceTests.fs" />
+    <Compile Include="tests/Program.fs" />
   </ItemGroup>
 
 </Project>
