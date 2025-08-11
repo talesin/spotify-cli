@@ -21,6 +21,7 @@ import { NodeContext, NodeRuntime, NodeHttpServer } from '@effect/platform-node'
 import { HttpServer, HttpRouter } from '@effect/platform'
 import { createServer } from 'node:http'
 import { ConfigService, TokenDataSchema, isTokenExpired } from './ConfigService'
+import { TokenManager } from './TokenManager'
 import { FetchHttpClient } from '@effect/platform'
 import { SpotifyApi } from './SpotifyApi'
 import { loadSpotifyConfig, OAUTH_CONSTANTS } from './environment'
@@ -224,41 +225,96 @@ const authCommand = Command.make('auth', {}, () =>
  */
 const meCommand = Command.make('me', {}, () =>
   Effect.gen(function* () {
-    const configService = yield* ConfigService
+    const tokenManager = yield* TokenManager
+    const spotifyApi = yield* SpotifyApi
 
     yield* Console.log('👤 Spotify User Profile')
     yield* Console.log('')
 
-    // Check for authentication
-    const existingTokens = yield* configService.loadTokens()
+    try {
+      // Get a valid access token (handles refresh automatically)
+      const accessToken = yield* tokenManager.getValidAccessToken()
 
-    if (existingTokens._tag === 'None') {
-      yield* Console.log('❌ Not authenticated')
+      yield* Console.log('🔄 Fetching your profile information...')
+
+      // Fetch user profile from Spotify API
+      const userProfile = yield* spotifyApi.getCurrentUser(accessToken)
+
+      yield* Console.log('✅ Successfully retrieved your profile information:')
       yield* Console.log('')
-      yield* Console.log('You need to authenticate with Spotify first.')
-      yield* Console.log('Run `spotify-cli auth` to get started.')
-      return
-    }
 
-    // Check if tokens are expired
-    if (isTokenExpired(existingTokens.value)) {
-      yield* Console.log('⚠️  Authentication expired')
+      // Display profile information in a formatted box
+      yield* Console.log('┌─────────────────────────────────────────────┐')
+      yield* Console.log(`│ Display Name: ${(userProfile.display_name ?? 'N/A').padEnd(25)} │`)
+
+      if (userProfile.email) {
+        yield* Console.log(`│ Email:        ${userProfile.email.padEnd(25)} │`)
+      }
+
+      if (userProfile.country) {
+        yield* Console.log(`│ Country:      ${userProfile.country.padEnd(25)} │`)
+      }
+
+      if (userProfile.product) {
+        yield* Console.log(`│ Subscription: ${userProfile.product.padEnd(25)} │`)
+      }
+
+      yield* Console.log(`│ Spotify URI:  ${userProfile.uri.padEnd(25)} │`)
+      yield* Console.log(`│ Followers:    ${userProfile.followers.total.toString().padEnd(25)} │`)
+      yield* Console.log('└─────────────────────────────────────────────┘')
       yield* Console.log('')
-      yield* Console.log('Your tokens have expired. Please re-authenticate.')
-      yield* Console.log('Run `spotify-cli auth` to refresh your authentication.')
-      return
-    }
 
-    yield* Console.log('🚧 Feature coming soon!')
-    yield* Console.log('')
-    yield* Console.log('The user profile feature is currently under development.')
-    yield* Console.log('This will display your Spotify profile information including:')
-    yield* Console.log('  • Display name')
-    yield* Console.log('  • Email address')
-    yield* Console.log('  • Country')
-    yield* Console.log('  • Subscription type')
-    yield* Console.log('')
-    yield* Console.log('Stay tuned for the next update! 🎵')
+      if (userProfile.external_urls?.spotify) {
+        yield* Console.log(`🔗 Profile URL: ${userProfile.external_urls.spotify}`)
+        yield* Console.log('')
+      }
+    } catch (error) {
+      if (error._tag === 'TokenManagerError') {
+        yield* Console.log('❌ Authentication Error')
+        yield* Console.log('')
+        yield* Console.log(error.message)
+        return
+      }
+
+      if (error._tag === 'Unauthorized') {
+        yield* Console.log('❌ Authentication expired or invalid')
+        yield* Console.log('')
+        yield* Console.log('Your authentication has expired or is invalid.')
+        yield* Console.log('Please run `spotify-cli auth` to re-authenticate.')
+        return
+      }
+
+      if (error._tag === 'NetworkError') {
+        yield* Console.log('❌ Network Error')
+        yield* Console.log('')
+        yield* Console.log(
+          'Unable to connect to Spotify API. Please check your internet connection.'
+        )
+        yield* Console.log(`Details: ${error.message}`)
+        return
+      }
+
+      if (error._tag === 'RateLimited') {
+        yield* Console.log('❌ Rate Limited')
+        yield* Console.log('')
+        yield* Console.log('Spotify API rate limit exceeded. Please try again later.')
+        if (error.retryAfterSeconds) {
+          yield* Console.log(`Retry after: ${error.retryAfterSeconds} seconds`)
+        }
+        return
+      }
+
+      // Generic error handling
+      yield* Console.log('❌ Unexpected Error')
+      yield* Console.log('')
+      yield* Console.log('An unexpected error occurred while fetching your profile.')
+      yield* Console.log(`Details: ${String(error)}`)
+      yield* Console.log('')
+      yield* Console.log('💡 Troubleshooting tips:')
+      yield* Console.log('  • Check your internet connection')
+      yield* Console.log('  • Try running `spotify-cli auth` to refresh authentication')
+      yield* Console.log('  • Report this issue if the problem persists')
+    }
   })
 )
 
@@ -362,6 +418,7 @@ NodeRuntime.runMain(
     Effect.provide(OAuthService.Default),
     Effect.provide(CryptoService.Default),
     Effect.provide(BrowserService.Default),
+    Effect.provide(TokenManager.Default),
     Effect.provide(FetchHttpClient.layer),
     Effect.provide(NodeContext.layer)
   )

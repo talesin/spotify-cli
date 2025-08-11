@@ -18,7 +18,7 @@
  * @module SpotifyApi
  */
 
-import { Data, Effect, Layer, Option } from 'effect'
+import { Data, Effect, Layer, Option, Schema } from 'effect'
 import {
   HttpClient,
   HttpClientRequest,
@@ -395,6 +395,82 @@ export const exchangeCodeForTokensWithPKCE =
     )
 
 /**
+ * Refresh Access Token
+ *
+ * Exchanges a refresh token for a new access token using Spotify's OAuth
+ * token refresh endpoint. This is used to obtain new access tokens without
+ * requiring the user to re-authenticate.
+ *
+ * The refresh token is long-lived and can be used multiple times to obtain
+ * new access tokens. Access tokens typically expire after 1 hour.
+ *
+ * @param httpClient - HTTP client for making requests
+ * @param clientId - Spotify application client ID
+ * @param clientSecret - Spotify application client secret
+ * @param refreshToken - Valid refresh token from previous OAuth flow
+ * @returns Effect that yields new token response or fails with SpotifyApiError
+ *
+ * @example
+ * ```typescript
+ * const newTokens = yield* refreshAccessToken(
+ *   httpClient,
+ *   'your-client-id',
+ *   'your-client-secret',
+ *   'stored-refresh-token'
+ * )
+ *
+ * // Use the new access token
+ * console.log(`New access token: ${newTokens.access_token}`)
+ * ```
+ *
+ * @see https://developer.spotify.com/documentation/web-api/tutorials/refreshing-tokens
+ */
+export const refreshAccessToken =
+  (httpClient: HttpClient.HttpClient) =>
+  (clientId: string, clientSecret: string, refreshToken: string) =>
+    Effect.gen(function* () {
+      const request = createTokenExchangeRequest(clientId, clientSecret, {
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken
+      })
+
+      const response = yield* httpClient.execute(request)
+
+      if (response.status !== 200) {
+        const responseText = yield* response.text
+        return yield* Effect.fail(
+          new NetworkError({
+            message: `Token refresh failed: ${response.status} - ${responseText}`
+          })
+        )
+      }
+
+      const json = yield* response.json
+
+      // Parse response using schema for type safety
+      const tokenResponse = yield* Schema.decodeUnknown(SpotifyTokenResponseSchema)(json).pipe(
+        Effect.mapError(
+          (error) =>
+            new InvalidResponse({
+              message: 'Invalid token response format',
+              error
+            })
+        )
+      )
+
+      return tokenResponse
+    }).pipe(
+      Effect.mapError((error): SpotifyApiError => {
+        if (error instanceof NetworkError || error instanceof InvalidResponse) {
+          return error
+        }
+        return new NetworkError({
+          message: `Failed to refresh access token: ${error}`
+        })
+      })
+    )
+
+/**
  * Spotify API Service
  *
  * Effect Service that provides HTTP operations for Spotify API.
@@ -407,7 +483,12 @@ export class SpotifyApi extends Effect.Service<SpotifyApi>()('SpotifyApi', {
     return {
       call: spotifyApiCall(httpClient),
       exchangeCodeForTokens: exchangeCodeForTokens(httpClient),
-      exchangeCodeForTokensWithPKCE: exchangeCodeForTokensWithPKCE(httpClient)
+      exchangeCodeForTokensWithPKCE: exchangeCodeForTokensWithPKCE(httpClient),
+      refreshAccessToken: refreshAccessToken(httpClient),
+      getCurrentUser: (accessToken: string) =>
+        spotifyApiCall(httpClient)('/me', accessToken, (json) =>
+          Schema.decodeUnknown(SpotifyUserProfileSchema)(json)
+        )
     }
   }),
   dependencies: [FetchHttpClient.layer]
@@ -423,6 +504,8 @@ export const TestSpotifyApiLayer = (fn?: {
   call?: SpotifyApi['call']
   exchangeCodeForTokens?: SpotifyApi['exchangeCodeForTokens']
   exchangeCodeForTokensWithPKCE?: SpotifyApi['exchangeCodeForTokensWithPKCE']
+  refreshAccessToken?: SpotifyApi['refreshAccessToken']
+  getCurrentUser?: SpotifyApi['getCurrentUser']
 }) =>
   Layer.succeed(
     SpotifyApi,
@@ -444,6 +527,98 @@ export const TestSpotifyApiLayer = (fn?: {
             access_token: 'test-token',
             refresh_token: 'test-refresh',
             expires_in: 3600
+          })),
+      refreshAccessToken:
+        fn?.refreshAccessToken ??
+        (() =>
+          Effect.succeed({
+            access_token: 'refreshed-test-token',
+            refresh_token: 'refreshed-test-refresh',
+            expires_in: 3600
+          })),
+      getCurrentUser:
+        fn?.getCurrentUser ??
+        ((_accessToken) =>
+          Effect.succeed({
+            id: 'test-user-id',
+            display_name: 'Test User',
+            email: 'test@example.com',
+            country: 'US',
+            product: 'premium',
+            type: 'user',
+            uri: 'spotify:user:test-user-id',
+            href: 'https://api.spotify.com/v1/users/test-user-id',
+            external_urls: { spotify: 'https://open.spotify.com/user/test-user-id' },
+            followers: { href: null, total: 42 },
+            images: [],
+            explicit_content: { filter_enabled: false, filter_locked: false }
           }))
     })
   )
+
+/**
+ * Spotify User Profile Schema
+ *
+ * Type-safe schema definition for Spotify's user profile API response.
+ * Based on the official Spotify Web API documentation for the /me endpoint.
+ *
+ * @see https://developer.spotify.com/documentation/web-api/reference/get-current-users-profile
+ */
+export const SpotifyUserImageSchema = Schema.Struct({
+  url: Schema.String,
+  height: Schema.Union(Schema.Number, Schema.Null),
+  width: Schema.Union(Schema.Number, Schema.Null)
+})
+
+export const SpotifyUserExternalUrlsSchema = Schema.Struct({
+  spotify: Schema.String
+})
+
+export const SpotifyUserFollowersSchema = Schema.Struct({
+  href: Schema.Union(Schema.String, Schema.Null),
+  total: Schema.Number
+})
+
+export const SpotifyUserExplicitContentSchema = Schema.Struct({
+  filter_enabled: Schema.Boolean,
+  filter_locked: Schema.Boolean
+})
+
+export const SpotifyUserProfileSchema = Schema.Struct({
+  id: Schema.String,
+  display_name: Schema.Union(Schema.String, Schema.Null),
+  email: Schema.optional(Schema.String),
+  country: Schema.optional(Schema.String),
+  product: Schema.optional(Schema.String),
+  type: Schema.String,
+  uri: Schema.String,
+  href: Schema.String,
+  external_urls: SpotifyUserExternalUrlsSchema,
+  followers: SpotifyUserFollowersSchema,
+  images: Schema.Array(SpotifyUserImageSchema),
+  explicit_content: SpotifyUserExplicitContentSchema
+})
+
+/**
+ * TypeScript type derived from the Spotify User Profile schema
+ */
+export type SpotifyUserProfile = Schema.Schema.Type<typeof SpotifyUserProfileSchema>
+
+/**
+ * OAuth Token Response Schema
+ *
+ * Type-safe schema for OAuth token responses from Spotify's token endpoint.
+ * Used for both authorization code exchange and token refresh operations.
+ */
+export const SpotifyTokenResponseSchema = Schema.Struct({
+  access_token: Schema.String,
+  refresh_token: Schema.optional(Schema.String),
+  expires_in: Schema.Number,
+  token_type: Schema.optional(Schema.String),
+  scope: Schema.optional(Schema.String)
+})
+
+/**
+ * TypeScript type derived from the Spotify Token Response schema
+ */
+export type SpotifyTokenResponse = Schema.Schema.Type<typeof SpotifyTokenResponseSchema>
