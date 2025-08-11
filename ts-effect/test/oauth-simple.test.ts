@@ -20,7 +20,7 @@ describe('OAuth Service - Simple Tests', () => {
         expect(typeof oauthService.buildAuthorizationUrl).toBe('function')
         expect(typeof oauthService.launchBrowser).toBe('function')
         expect(typeof oauthService.parseOAuthCallback).toBe('function')
-        expect(typeof oauthService.startCallbackServer).toBe('function')
+        expect(typeof oauthService.createCallbackRouterAndWaiter).toBe('function')
         expect(typeof oauthService.completeFlow).toBe('function')
       }).pipe(Effect.provide(testLayer), Effect.runPromise)
     })

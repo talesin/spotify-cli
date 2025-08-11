@@ -14,6 +14,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "eslint src/**/*.ts",
+    "lint:fix": "npm run lint -- --fix",
     "typecheck": "npx tsc --noEmit"
   },
   "keywords": [],

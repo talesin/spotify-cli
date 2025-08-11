@@ -16,8 +16,10 @@
  */
 
 import { Command } from '@effect/cli'
-import { Console, Effect } from 'effect'
-import { NodeContext, NodeRuntime } from '@effect/platform-node'
+import { Console, Effect, Layer } from 'effect'
+import { NodeContext, NodeRuntime, NodeHttpServer } from '@effect/platform-node'
+import { HttpServer, HttpRouter } from '@effect/platform'
+import { createServer } from 'node:http'
 import { ConfigService, TokenDataSchema, isTokenExpired } from './ConfigService'
 import { FetchHttpClient } from '@effect/platform'
 import { SpotifyApi } from './SpotifyApi'
@@ -25,7 +27,7 @@ import { loadSpotifyConfig, OAUTH_CONSTANTS } from './environment'
 import { OAuthService } from './OAuthService'
 import { CryptoService } from './CryptoService'
 import { BrowserService } from './BrowserService'
-import { HttpServerService } from './HttpServerService'
+import { CallbackServerError } from './CallbackServer'
 
 /**
  * Authentication Command
@@ -92,8 +94,27 @@ const authCommand = Command.make('auth', {}, () =>
     yield* Console.log('   Please authorize the application in your browser to continue.')
     yield* Console.log('')
 
+    // Create server runner function that will manage the HTTP server lifecycle
+    const serverRunner = (router: HttpRouter.HttpRouter<CallbackServerError>, port: number) =>
+      Effect.gen(function* () {
+        yield* Console.log(`📡 Starting local server on http://localhost:${port}/callback`)
+
+        // Create server layer
+        const ServerLive = NodeHttpServer.layer(() => createServer(), { port })
+
+        // Create the server application with the router
+        const app = router.pipe(HttpServer.serve(), HttpServer.withLogAddress)
+
+        // Launch the server and run it
+        yield* Layer.launch(Layer.provide(app, ServerLive)).pipe(
+          Effect.provide(NodeContext.layer),
+          Effect.catchAllDefect(() => Effect.void),
+          Effect.catchAll(() => Effect.void)
+        )
+      })
+
     // Execute complete OAuth flow
-    const tokens = yield* oauthService.completeFlow(spotifyConfig).pipe(
+    const tokens = yield* oauthService.completeFlow(spotifyConfig, serverRunner).pipe(
       Effect.tap(() =>
         Console.log('🔄 Processing authorization code and exchanging for tokens...')
       ),
@@ -341,7 +362,6 @@ NodeRuntime.runMain(
     Effect.provide(OAuthService.Default),
     Effect.provide(CryptoService.Default),
     Effect.provide(BrowserService.Default),
-    Effect.provide(HttpServerService.Default),
     Effect.provide(FetchHttpClient.layer),
     Effect.provide(NodeContext.layer)
   )

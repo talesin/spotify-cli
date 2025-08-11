@@ -15,14 +15,19 @@
  * @module OAuthService
  */
 
-import { Data, Effect, Layer } from 'effect'
-import { HttpServerRequest } from '@effect/platform'
+import { Data, Effect, Layer, Ref, Fiber } from 'effect'
+import { HttpServerRequest, HttpRouter } from '@effect/platform'
 import { SpotifyConfig, SPOTIFY_SCOPES, OAUTH_CONSTANTS } from './environment'
 import { SpotifyApi } from './SpotifyApi'
 import { CryptoService } from './CryptoService'
 import { BrowserService } from './BrowserService'
-import { HttpServerService } from './HttpServerService'
-import { startOAuthCallbackServer, extractPortFromRedirectUri } from './CallbackServer'
+import {
+  createOAuthCallbackRouter,
+  waitForCallbackResult,
+  extractPortFromRedirectUri,
+  CallbackServerResult,
+  CallbackServerError
+} from './CallbackServer'
 import { ChildProcess } from 'child_process'
 
 /**
@@ -215,38 +220,37 @@ const parseOAuthCallback = (request: HttpServerRequest.HttpServerRequest) =>
   })
 
 /**
- * Start OAuth Callback Server Implementation
+ * Create OAuth Callback Router Implementation
  *
- * Starts a real HTTP server to handle OAuth callbacks from Spotify.
- * Extracts the port from the redirect URI and starts a temporary server
- * that waits for the authorization code response.
+ * Creates the HTTP router for handling OAuth callbacks from Spotify.
+ * Returns both the router and a way to wait for the callback result.
+ * This separates the router creation from the server lifecycle management.
  *
- * @param httpServer - HttpServerService for server operations
  * @param config - Spotify OAuth configuration
  * @param expectedState - Expected state parameter for validation
- * @returns Effect that yields OAuthCallback or fails with OAuthError
+ * @returns Effect that yields router and callback waiter
  */
-const startCallbackServer =
-  (httpServer: HttpServerService) => (config: SpotifyConfig, expectedState: string) =>
-    Effect.gen(function* () {
-      const port = extractPortFromRedirectUri(config.redirectUri)
-
-      const callback = yield* startOAuthCallbackServer(httpServer)({
-        port,
-        expectedState,
-        timeoutMs: 300_000 // 5 minutes
-      }).pipe(
+const createCallbackRouterAndWaiter = (config: SpotifyConfig, expectedState: string) =>
+  Effect.gen(function* () {
+    const resultRef = yield* Ref.make<CallbackServerResult | null>(null)
+    const router = createOAuthCallbackRouter(resultRef, expectedState)
+    const waitForCallback = () =>
+      waitForCallbackResult(resultRef, 300_000).pipe(
         Effect.mapError(
           (error) =>
             new OAuthError({
-              message: `OAuth callback server failed: ${error.message}`,
+              message: `OAuth callback failed: ${error.message}`,
               cause: error
             })
         )
       )
 
-      return callback
-    })
+    return {
+      router,
+      waitForCallback,
+      port: extractPortFromRedirectUri(config.redirectUri)
+    }
+  })
 
 /**
  * Complete OAuth Flow Implementation
@@ -258,19 +262,20 @@ const startCallbackServer =
  *
  * @param crypto - CryptoService for secure operations
  * @param browser - BrowserService for launching browsers
- * @param httpServer - HttpServerService for callback server
+ * @param runOAuthServer - Function to run the OAuth callback server with a router
  * @param spotifyApi - SpotifyApi for token exchange
  * @param config - Spotify OAuth configuration
  * @returns Effect that yields access/refresh tokens or fails with OAuthError
  */
 const completeOAuthFlow =
+  (crypto: CryptoService, browser: BrowserService, spotifyApi: SpotifyApi) =>
   (
-    crypto: CryptoService,
-    browser: BrowserService,
-    httpServer: HttpServerService,
-    spotifyApi: SpotifyApi
+    config: SpotifyConfig,
+    serverRunner: (
+      router: HttpRouter.HttpRouter<CallbackServerError>,
+      port: number
+    ) => Effect.Effect<void>
   ) =>
-  (config: SpotifyConfig) =>
     Effect.gen(function* () {
       // Generate PKCE challenge and state
       const pkce = yield* generatePKCEChallenge(crypto)
@@ -281,8 +286,16 @@ const completeOAuthFlow =
       const authUrl = buildAuthorizationUrl(config, oauthState)
       yield* launchBrowser(browser)(authUrl)
 
-      // Start callback server and wait for authorization code
-      const callback = yield* startCallbackServer(httpServer)(config, state)
+      // Create callback router and setup
+      const { router, waitForCallback, port } = yield* createCallbackRouterAndWaiter(config, state)
+
+      // Start server in background and wait for callback
+      const serverFiber = yield* Effect.fork(serverRunner(router, port))
+
+      // Wait for callback with cleanup
+      const callback = yield* waitForCallback().pipe(
+        Effect.ensuring(Fiber.interruptFork(serverFiber))
+      )
 
       // Exchange authorization code for tokens using SpotifyApi (including PKCE code_verifier)
       const tokens = yield* spotifyApi.exchangeCodeForTokensWithPKCE(
@@ -301,14 +314,13 @@ const completeOAuthFlow =
  *
  * Effect Service that provides OAuth 2.0 authentication operations.
  * Depends on CryptoService for secure operations, BrowserService for
- * launching browsers, HttpServerService for callback handling, and
- * SpotifyApi for token exchange.
+ * launching browsers, and SpotifyApi for token exchange.
+ * Server management is handled by the caller.
  */
 export class OAuthService extends Effect.Service<OAuthService>()('OAuthService', {
   effect: Effect.gen(function* () {
     const crypto = yield* CryptoService
     const browser = yield* BrowserService
-    const httpServer = yield* HttpServerService
     const spotifyApi = yield* SpotifyApi
 
     return {
@@ -339,22 +351,17 @@ export class OAuthService extends Effect.Service<OAuthService>()('OAuthService',
       parseOAuthCallback: parseOAuthCallback,
 
       /**
-       * Start callback server to handle OAuth redirect (real HTTP server)
+       * Create callback router and waiter for OAuth redirect
        */
-      startCallbackServer: startCallbackServer(httpServer),
+      createCallbackRouterAndWaiter: createCallbackRouterAndWaiter,
 
       /**
-       * Complete full OAuth authentication flow
+       * Complete full OAuth authentication flow (requires server runner)
        */
-      completeFlow: completeOAuthFlow(crypto, browser, httpServer, spotifyApi)
+      completeFlow: completeOAuthFlow(crypto, browser, spotifyApi)
     }
   }),
-  dependencies: [
-    CryptoService.Default,
-    BrowserService.Default,
-    HttpServerService.Default,
-    SpotifyApi.Default
-  ]
+  dependencies: [CryptoService.Default, BrowserService.Default, SpotifyApi.Default]
 }) {}
 
 /**
@@ -369,7 +376,7 @@ export const TestOAuthServiceLayer = (mockFunctions?: {
   buildAuthorizationUrl?: OAuthService['buildAuthorizationUrl']
   launchBrowser?: OAuthService['launchBrowser']
   parseOAuthCallback?: OAuthService['parseOAuthCallback']
-  startCallbackServer?: OAuthService['startCallbackServer']
+  createCallbackRouterAndWaiter?: OAuthService['createCallbackRouterAndWaiter']
   completeFlow?: OAuthService['completeFlow']
 }) =>
   Layer.succeed(
@@ -394,12 +401,17 @@ export const TestOAuthServiceLayer = (mockFunctions?: {
       parseOAuthCallback:
         mockFunctions?.parseOAuthCallback ??
         ((_request) => Effect.succeed({ code: 'mock-code', state: 'mock-state' })),
-      startCallbackServer:
-        mockFunctions?.startCallbackServer ??
-        ((_config, state) => Effect.succeed({ code: 'mock-code', state })),
+      createCallbackRouterAndWaiter:
+        mockFunctions?.createCallbackRouterAndWaiter ??
+        ((_config, state) =>
+          Effect.succeed({
+            router: HttpRouter.empty,
+            waitForCallback: () => Effect.succeed({ code: 'mock-code', state }),
+            port: 3000
+          })),
       completeFlow:
         mockFunctions?.completeFlow ??
-        ((_config) =>
+        ((_config, _serverRunner) =>
           Effect.succeed({
             access_token: 'mock-access-token',
             refresh_token: 'mock-refresh-token',

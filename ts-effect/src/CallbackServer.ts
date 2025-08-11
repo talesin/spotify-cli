@@ -16,9 +16,8 @@
  * @module CallbackServer
  */
 
-import { Effect, Data, Ref } from 'effect'
-import { HttpServerRequest, HttpServerResponse } from '@effect/platform'
-import { HttpServerService, ServerConfig } from './HttpServerService'
+import { Effect, Data, Ref, Console } from 'effect'
+import { HttpServerRequest, HttpServerResponse, HttpRouter } from '@effect/platform'
 import { OAUTH_CONSTANTS } from './environment'
 
 /**
@@ -46,10 +45,12 @@ export interface OAuthCallback {
 /**
  * Callback Server Configuration
  *
- * Configuration for starting the OAuth callback server including
+ * Configuration for the OAuth callback server including
  * timeout settings and expected validation parameters.
  */
-export interface CallbackServerConfig extends ServerConfig {
+export interface CallbackServerConfig {
+  readonly port: number
+  readonly host?: string
   readonly timeoutMs?: number
   readonly expectedState: string
 }
@@ -279,144 +280,119 @@ export const createErrorResponseHtml = (errorMessage: string): string => `
 `
 
 /**
- * Start OAuth Callback Server
+ * Create OAuth Callback Router
  *
- * Starts a temporary HTTP server to handle the OAuth callback from Spotify.
- * The server listens for the authorization code response, validates the
- * parameters, and provides user-friendly HTML responses.
+ * Creates an HttpRouter that handles OAuth callback requests from Spotify.
+ * This router processes the authorization code response and stores the result
+ * in a shared Ref for retrieval by the polling mechanism.
  *
- * @param httpServer - HttpServerService for server operations
- * @param config - Callback server configuration
- * @returns Effect that yields OAuthCallback or fails with CallbackServerError
+ * @param resultRef - Ref to store the callback result
+ * @param expectedState - Expected state parameter for validation
+ * @returns HttpRouter configured to handle OAuth callbacks
  */
-export const startOAuthCallbackServer =
-  (httpServer: HttpServerService) => (config: CallbackServerConfig) =>
-    Effect.gen(function* () {
-      // Ref to store the callback result
-      const resultRef = yield* Ref.make<CallbackServerResult | null>(null)
+export const createOAuthCallbackRouter = (
+  resultRef: Ref.Ref<CallbackServerResult | null>,
+  expectedState: string
+): HttpRouter.HttpRouter<CallbackServerError> =>
+  HttpRouter.empty.pipe(
+    HttpRouter.get(
+      OAUTH_CONSTANTS.CALLBACK_PATH,
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        yield* Console.log(`📨 Received callback request: GET ${OAUTH_CONSTANTS.CALLBACK_PATH}`)
 
-      // Create request handler
-      const callbackHandler = (request: HttpServerRequest.HttpServerRequest) =>
-        Effect.gen(function* () {
-          console.log(`📨 Received callback request: ${request.method} ${request.url}`)
+        yield* Console.log(`✅ Processing OAuth callback...`)
+        // Parse and validate callback parameters
+        const result = yield* parseOAuthCallback(request).pipe(
+          Effect.flatMap((callback) =>
+            Effect.gen(function* () {
+              yield* Console.log(
+                `🔑 Parsed callback with code: ${callback.code.substring(0, 20)}...`
+              )
 
-          // Only handle GET requests to the callback path
-          if (request.method !== 'GET') {
-            console.log(`❌ Wrong method: ${request.method}`)
-            return HttpServerResponse.text('Method not allowed', { status: 405 })
-          }
+              yield* validateOAuthState(callback.state, expectedState)
+              yield* Console.log(`✅ State validation successful`)
 
-          // Parse the callback URL path
-          const url = new URL(request.url, 'http://localhost')
-          console.log(
-            `🔍 Parsed URL path: ${url.pathname}, expected: ${OAUTH_CONSTANTS.CALLBACK_PATH}`
-          )
-          if (url.pathname !== OAUTH_CONSTANTS.CALLBACK_PATH) {
-            console.log(`❌ Wrong path: ${url.pathname}`)
-            return HttpServerResponse.text('Not found', { status: 404 })
-          }
+              // Store successful result
+              yield* Ref.set(resultRef, {
+                success: true,
+                callback
+              })
+              yield* Console.log(`✅ Callback result stored successfully`)
 
-          try {
-            console.log(`✅ Processing OAuth callback...`)
-            // Parse and validate callback parameters
-            const callback = yield* parseOAuthCallback(request)
-            console.log(`🔑 Parsed callback with code: ${callback.code.substring(0, 20)}...`)
-
-            yield* validateOAuthState(callback.state, config.expectedState)
-            console.log(`✅ State validation successful`)
-
-            // Store successful result
-            yield* Ref.set(resultRef, {
-              success: true,
-              callback
+              // Return success HTML response
+              return HttpServerResponse.html(createSuccessResponseHtml())
             })
-            console.log(`✅ Callback result stored successfully`)
-
-            // Return success HTML response
-            return HttpServerResponse.html(createSuccessResponseHtml())
-          } catch (error) {
-            const errorMessage =
-              error instanceof CallbackServerError ? error.message : 'Unknown authorization error'
-
-            // Store error result
-            yield* Ref.set(resultRef, {
-              success: false,
-              error: errorMessage
-            })
-
-            // Return error HTML response
-            return HttpServerResponse.html(createErrorResponseHtml(errorMessage))
-          }
-        }).pipe(
+          ),
           Effect.catchAll((error) =>
-            Effect.succeed(
-              HttpServerResponse.html(
-                createErrorResponseHtml(
-                  error instanceof CallbackServerError ? error.message : 'Internal server error'
-                )
-              )
-            )
+            Effect.gen(function* () {
+              const errorMessage =
+                error._tag === 'CallbackServerError' ? error.message : 'Unknown authorization error'
+
+              yield* Console.log(`❌ Callback processing error: ${errorMessage}`)
+
+              // Store error result
+              yield* Ref.set(resultRef, {
+                success: false,
+                error: errorMessage
+              })
+
+              // Return error HTML response
+              return HttpServerResponse.html(createErrorResponseHtml(errorMessage))
+            })
           )
         )
 
-      // Start the server
-      const server = yield* httpServer
-        .startServer({ port: config.port, host: config.host }, callbackHandler)
-        .pipe(
-          Effect.mapError((error) => {
-            console.log(`❌ Failed to start callback server: ${error}`)
-            return new CallbackServerError({
-              message: 'Failed to start OAuth callback server',
-              cause: error
-            })
-          })
-        )
-
-      // Wait for callback result with timeout - poll every second for up to 5 minutes
-      const pollForResult = Effect.gen(function* () {
-        let attempts = 0
-        const maxAttempts = 300 // 5 minutes at 1 second intervals
-
-        while (attempts < maxAttempts) {
-          const result = yield* Ref.get(resultRef)
-          if (result) {
-            return result
-          }
-          yield* Effect.sleep('1 seconds')
-          attempts++
-        }
-
-        return yield* Effect.fail(
-          new CallbackServerError({
-            message: 'OAuth callback timeout - no response received within the time limit'
-          })
-        )
-      })
-
-      const result = yield* pollForResult.pipe(
-        Effect.ensuring(
-          // Always stop the server
-          server
-            .stop()
-            .pipe(
-              Effect.catchAll((stopError) =>
-                Effect.logWarning(`Failed to stop callback server: ${stopError}`)
-              )
-            )
+        return result
+      }).pipe(
+        Effect.catchAll((_error) =>
+          Effect.succeed(HttpServerResponse.html(createErrorResponseHtml('Internal server error')))
         )
       )
+    )
+  )
 
-      // Return the callback data or fail with the error
-      if (result.success && result.callback) {
-        return result.callback
-      } else {
-        return yield* Effect.fail(
-          new CallbackServerError({
-            message: result.error ?? 'Unknown callback server error'
-          })
-        )
+/**
+ * Wait for OAuth Callback Result
+ *
+ * Polls a result Ref for OAuth callback completion with timeout handling.
+ * Used in conjunction with the callback router to wait for the authorization
+ * response from Spotify.
+ *
+ * @param resultRef - Ref containing the callback result
+ * @param timeoutMs - Maximum time to wait in milliseconds
+ * @returns Effect that yields OAuthCallback or fails with timeout
+ */
+export const waitForCallbackResult = (
+  resultRef: Ref.Ref<CallbackServerResult | null>,
+  timeoutMs: number = 300000 // 5 minutes
+) =>
+  Effect.gen(function* () {
+    const startTime = Date.now()
+    const intervalMs = 1000 // Poll every second
+
+    while (Date.now() - startTime < timeoutMs) {
+      const result = yield* Ref.get(resultRef)
+      if (result) {
+        if (result.success && result.callback) {
+          return result.callback
+        } else {
+          return yield* Effect.fail(
+            new CallbackServerError({
+              message: result.error ?? 'Unknown callback server error'
+            })
+          )
+        }
       }
-    })
+      yield* Effect.sleep(`${intervalMs} millis`)
+    }
+
+    return yield* Effect.fail(
+      new CallbackServerError({
+        message: 'OAuth callback timeout - no response received within the time limit'
+      })
+    )
+  })
 
 /**
  * Extract Port from Redirect URI
