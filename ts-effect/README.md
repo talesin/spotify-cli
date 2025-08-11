@@ -59,18 +59,18 @@ TypeScript/Effect CLI app for interacting with Spotify.
 
 ---
 
-### Phase 4: Get User Profile
+### Phase 4: Get User Profile - COMPLETED
 
-- [ ] Implement `spotify-cli me` command
-- [ ] Load access token from local storage
-- [ ] If token expired, refresh it using the refresh token
-- [ ] Call Spotify's `/me` API endpoint
-- [ ] Parse and display:
-  - [ ] Display Name
-  - [ ] Email
-  - [ ] Country
-  - [ ] Spotify URI (or Profile URL)
-- [ ] Handle and display errors (e.g. unauthorized, network issue)
+- [x] ✅ Implement `spotify-cli me` command
+- [x] ✅ Load access token from local storage
+- [x] ✅ If token expired, refresh it using the refresh token
+- [x] ✅ Call Spotify's `/me` API endpoint
+- [x] ✅ Parse and display:
+  - [x] ✅ Display Name
+  - [x] ✅ Email
+  - [x] ✅ Country
+  - [x] ✅ Spotify URI (or Profile URL)
+- [x] ✅ Handle and display errors (e.g. unauthorized, network issue)
 
 ---
 

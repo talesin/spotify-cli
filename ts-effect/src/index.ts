@@ -231,7 +231,7 @@ const meCommand = Command.make('me', {}, () =>
     yield* Console.log('👤 Spotify User Profile')
     yield* Console.log('')
 
-    try {
+    yield* Effect.gen(function* () {
       // Get a valid access token (handles refresh automatically)
       const accessToken = yield* tokenManager.getValidAccessToken()
 
@@ -244,77 +244,98 @@ const meCommand = Command.make('me', {}, () =>
       yield* Console.log('')
 
       // Display profile information in a formatted box
+      const boxWidth = 47 // Total width including borders and spaces
+      const labelWidth = 14 // Width for labels like "Display Name:"
+      const valueWidth = boxWidth - labelWidth - 4 // 4 for "│ " and " │"
+
       yield* Console.log('┌─────────────────────────────────────────────┐')
-      yield* Console.log(`│ Display Name: ${(userProfile.display_name ?? 'N/A').padEnd(25)} │`)
 
-      if (userProfile.email) {
-        yield* Console.log(`│ Email:        ${userProfile.email.padEnd(25)} │`)
+      const displayName = (userProfile.display_name ?? 'N/A').substring(0, valueWidth)
+      yield* Console.log(`│ Display Name: ${displayName.padEnd(valueWidth)} │`)
+
+      if (userProfile.email !== undefined && userProfile.email !== '') {
+        const email = userProfile.email.substring(0, valueWidth)
+        yield* Console.log(`│ Email:        ${email.padEnd(valueWidth)} │`)
       }
 
-      if (userProfile.country) {
-        yield* Console.log(`│ Country:      ${userProfile.country.padEnd(25)} │`)
+      if (userProfile.country !== undefined && userProfile.country !== '') {
+        const country = userProfile.country.substring(0, valueWidth)
+        yield* Console.log(`│ Country:      ${country.padEnd(valueWidth)} │`)
       }
 
-      if (userProfile.product) {
-        yield* Console.log(`│ Subscription: ${userProfile.product.padEnd(25)} │`)
+      if (userProfile.product !== undefined && userProfile.product !== '') {
+        const product = userProfile.product.substring(0, valueWidth)
+        yield* Console.log(`│ Subscription: ${product.padEnd(valueWidth)} │`)
       }
 
-      yield* Console.log(`│ Spotify URI:  ${userProfile.uri.padEnd(25)} │`)
-      yield* Console.log(`│ Followers:    ${userProfile.followers.total.toString().padEnd(25)} │`)
+      const spotifyUri = userProfile.uri.substring(0, valueWidth)
+      yield* Console.log(`│ Spotify URI:  ${spotifyUri.padEnd(valueWidth)} │`)
+
+      const followers = userProfile.followers.total.toString().substring(0, valueWidth)
+      yield* Console.log(`│ Followers:    ${followers.padEnd(valueWidth)} │`)
+
       yield* Console.log('└─────────────────────────────────────────────┘')
       yield* Console.log('')
 
-      if (userProfile.external_urls?.spotify) {
+      if (userProfile.external_urls.spotify !== '') {
         yield* Console.log(`🔗 Profile URL: ${userProfile.external_urls.spotify}`)
         yield* Console.log('')
       }
-    } catch (error) {
-      if (error._tag === 'TokenManagerError') {
-        yield* Console.log('❌ Authentication Error')
-        yield* Console.log('')
-        yield* Console.log(error.message)
-        return
-      }
-
-      if (error._tag === 'Unauthorized') {
-        yield* Console.log('❌ Authentication expired or invalid')
-        yield* Console.log('')
-        yield* Console.log('Your authentication has expired or is invalid.')
-        yield* Console.log('Please run `spotify-cli auth` to re-authenticate.')
-        return
-      }
-
-      if (error._tag === 'NetworkError') {
-        yield* Console.log('❌ Network Error')
-        yield* Console.log('')
-        yield* Console.log(
-          'Unable to connect to Spotify API. Please check your internet connection.'
-        )
-        yield* Console.log(`Details: ${error.message}`)
-        return
-      }
-
-      if (error._tag === 'RateLimited') {
-        yield* Console.log('❌ Rate Limited')
-        yield* Console.log('')
-        yield* Console.log('Spotify API rate limit exceeded. Please try again later.')
-        if (error.retryAfterSeconds) {
-          yield* Console.log(`Retry after: ${error.retryAfterSeconds} seconds`)
-        }
-        return
-      }
-
-      // Generic error handling
-      yield* Console.log('❌ Unexpected Error')
-      yield* Console.log('')
-      yield* Console.log('An unexpected error occurred while fetching your profile.')
-      yield* Console.log(`Details: ${String(error)}`)
-      yield* Console.log('')
-      yield* Console.log('💡 Troubleshooting tips:')
-      yield* Console.log('  • Check your internet connection')
-      yield* Console.log('  • Try running `spotify-cli auth` to refresh authentication')
-      yield* Console.log('  • Report this issue if the problem persists')
-    }
+    }).pipe(
+      Effect.catchTags({
+        TokenManagerError: (error) =>
+          Effect.gen(function* () {
+            yield* Console.log('❌ Authentication Error')
+            yield* Console.log('')
+            yield* Console.log(error.message)
+          }),
+        Unauthorized: (_error) =>
+          Effect.gen(function* () {
+            yield* Console.log('❌ Authentication expired or invalid')
+            yield* Console.log('')
+            yield* Console.log('Your authentication has expired or is invalid.')
+            yield* Console.log('Please run `spotify-cli auth` to re-authenticate.')
+          }),
+        NetworkError: (error) =>
+          Effect.gen(function* () {
+            yield* Console.log('❌ Network Error')
+            yield* Console.log('')
+            yield* Console.log(
+              'Unable to connect to Spotify API. Please check your internet connection.'
+            )
+            yield* Console.log(`Details: ${error.message}`)
+          }),
+        RateLimited: (error) =>
+          Effect.gen(function* () {
+            yield* Console.log('❌ Rate Limited')
+            yield* Console.log('')
+            yield* Console.log('Spotify API rate limit exceeded. Please try again later.')
+            if (error.retryAfter !== undefined && error.retryAfter !== null) {
+              yield* Console.log(`Retry after: ${error.retryAfter} seconds`)
+            }
+          }),
+        InvalidResponse: (error) =>
+          Effect.gen(function* () {
+            yield* Console.log('❌ Invalid Response')
+            yield* Console.log('')
+            yield* Console.log('Received unexpected response from Spotify API.')
+            yield* Console.log(`Details: ${error.message}`)
+          })
+      }),
+      Effect.catchAllDefect((error) =>
+        Effect.gen(function* () {
+          yield* Console.log('❌ Unexpected Error')
+          yield* Console.log('')
+          yield* Console.log('An unexpected error occurred while fetching your profile.')
+          yield* Console.log(`Details: ${String(error)}`)
+          yield* Console.log('')
+          yield* Console.log('💡 Troubleshooting tips:')
+          yield* Console.log('  • Check your internet connection')
+          yield* Console.log('  • Try running `spotify-cli auth` to refresh authentication')
+          yield* Console.log('  • Report this issue if the problem persists')
+        })
+      )
+    )
   })
 )
 
