@@ -3,6 +3,7 @@ namespace SpotifyCLI.Services
 open System
 open System.IO
 open System.Text.Json
+open System.Text.Json.Serialization
 open FSharp.SystemTextJson
 open SpotifyCLI.Domain
 
@@ -71,9 +72,9 @@ type ConfigService(fileSystem: IFileSystem) =
     let configFilePath = Path.Combine(configDirectory, "spotify.json")
     
     let jsonOptions = 
-        let options = JsonSerializerOptions()
-        options.WriteIndented <- true
-        options
+        JsonFSharpOptions.Default()
+            .WithUnionInternalTag()
+            .ToJsonSerializerOptions()
     
     /// Convert domain TokenStorage to JSON representation
     let toJsonTokenStorage (tokens: TokenStorage) : TokenStorageJson = {

@@ -4,8 +4,6 @@ open System
 open System.Net.Http
 open System.Text
 open System.Threading.Tasks
-open FsHttp
-open FsHttp.Response
 open SpotifyCLI.Domain
 
 /// HTTP request configuration
@@ -38,18 +36,10 @@ type IHttpService =
     abstract GetAsync: HttpUrl -> Map<string, string> -> Task<Result<HttpResponse, HttpError>>
     abstract PostAsync: HttpUrl -> string -> Map<string, string> -> Task<Result<HttpResponse, HttpError>>
 
-/// System HTTP client implementation using FsHttp
+/// System HTTP client implementation using standard HttpClient
 type SystemHttpClient() =
     
-    let defaultTimeoutMs = 30000
-    
-    /// Convert HttpMethod to FsHttp method
-    let mapHttpMethod = function
-        | m when m = HttpMethod.Get -> FsHttp.GlobalConfig.Json.get
-        | m when m = HttpMethod.Post -> FsHttp.GlobalConfig.Json.post  
-        | m when m = HttpMethod.Put -> FsHttp.GlobalConfig.Json.put
-        | m when m = HttpMethod.Delete -> FsHttp.GlobalConfig.Json.delete
-        | _ -> FsHttp.GlobalConfig.Json.get // Default to GET
+    let httpClient = new HttpClient()
     
     /// Map HTTP status codes to domain errors
     let mapStatusCodeToError (statusCode: int) (content: string) =
@@ -58,9 +48,7 @@ type SystemHttpClient() =
         | 401 -> Unauthorized
         | 403 -> Forbidden content
         | 404 -> NotFound
-        | 429 ->
-            // Try to extract retry-after header value
-            RateLimited None
+        | 429 -> RateLimited None
         | code when code >= 500 -> ServerError(code, content)
         | _ -> ServerError(statusCode, $"Unexpected status code: {statusCode}")
     
@@ -70,33 +58,29 @@ type SystemHttpClient() =
                 try
                     let url = TypeExtraction.getHttpUrl request.Url
                     
-                    // Build FsHttp request
-                    let httpRequest = 
-                        http {
-                            (mapHttpMethod request.Method) url
-                            
-                            // Add headers
-                            for header in request.Headers do
-                                header header.Key header.Value
-                            
-                            // Add body if present
-                            match request.Body with
-                            | Some body when request.Method = HttpMethod.Post || request.Method = HttpMethod.Put ->
-                                body body
-                            | _ -> ()
-                        }
+                    // Create HttpRequestMessage
+                    use httpRequestMessage = new HttpRequestMessage(request.Method, url)
                     
-                    // Execute request with timeout
-                    let! response = 
-                        httpRequest
-                        |> Request.timeout (TimeSpan.FromMilliseconds(float request.TimeoutMs))
-                        |> Request.sendAsync
+                    // Set timeout
+                    httpClient.Timeout <- TimeSpan.FromMilliseconds(float request.TimeoutMs)
                     
-                    let! content = response |> Response.toTextAsync
+                    // Add headers
+                    for kvp in request.Headers do
+                        httpRequestMessage.Headers.TryAddWithoutValidation(kvp.Key, kvp.Value) |> ignore
+                    
+                    // Add body if present
+                    match request.Body with
+                    | Some body when request.Method = HttpMethod.Post || request.Method = HttpMethod.Put ->
+                        httpRequestMessage.Content <- new StringContent(body, Encoding.UTF8, "application/json")
+                    | _ -> ()
+                    
+                    // Send request
+                    let! response = httpClient.SendAsync(httpRequestMessage)
+                    let! content = response.Content.ReadAsStringAsync()
                     
                     let responseHeaders = 
                         response.Headers
-                        |> Seq.map (fun h -> h.Key, String.Join(", ", h.Value))
+                        |> Seq.map (fun h -> h.Key, String.concat ", " h.Value)
                         |> Map.ofSeq
                     
                     let httpResponse = {
@@ -120,6 +104,10 @@ type SystemHttpClient() =
                 | ex ->
                     return Error(ServerError(0, $"HTTP request failed: {ex.Message}"))
             }
+    
+    interface IDisposable with
+        member _.Dispose() = 
+            httpClient.Dispose()
 
 /// HTTP service implementation using dependency injection pattern
 type HttpService(httpClient: IHttpClient) =
@@ -186,7 +174,7 @@ module HttpService =
         HttpService(httpClient) :> IHttpService
     
     let createWithSystemHttpClient () : IHttpService =
-        let httpClient = SystemHttpClient() :> IHttpClient
+        let httpClient = new SystemHttpClient() :> IHttpClient
         create httpClient
 
 /// HTTP service utilities and helpers
