@@ -4,6 +4,7 @@ open System
 open System.Threading
 open System.Threading.Tasks
 open SpotifyCLI.Domain
+open FsToolkit.ErrorHandling
 
 /// Authentication workflow configuration
 [<Struct>]
@@ -61,23 +62,19 @@ type AuthenticationWorkflowService(services: AuthWorkflowServices) =
     
     /// Generate PKCE parameters and secure state for OAuth flow
     let generateAuthWorkflowState () : Result<AuthWorkflowState, AuthWorkflowError> =
-        // Generate PKCE verifier and challenge
-        services.CryptoService.GenerateCodeVerifier()
-        |> Result.mapError (fun err -> ErrorConversion.cryptoErrorToAuthWorkflowError err)
-        |> Result.bind (fun codeVerifier ->
-            services.CryptoService.GenerateCodeChallenge(codeVerifier)
-            |> Result.mapError (fun err -> ErrorConversion.cryptoErrorToAuthWorkflowError err)
-            |> Result.bind (fun codeChallenge ->
-                // Generate secure state parameter
-                OAuthServiceHelpers.createTimestampedState services.CryptoService
-                |> Result.mapError (fun err -> ErrorConversion.cryptoErrorToAuthWorkflowError err)
-                |> Result.map (fun state ->
-                    {
-                        CodeVerifier = codeVerifier
-                        CodeChallenge = codeChallenge
-                        State = state
-                        CallbackServerRunning = false
-                    })))
+        let toAuthErr = ErrorConversion.cryptoErrorToAuthWorkflowError
+
+        result {
+            let! codeVerifier = services.CryptoService.GenerateCodeVerifier() |> Result.mapError toAuthErr
+            let! codeChallenge = services.CryptoService.GenerateCodeChallenge(codeVerifier) |> Result.mapError toAuthErr
+            let! state = OAuthServiceHelpers.createTimestampedState services.CryptoService |> Result.mapError toAuthErr
+            return {
+                CodeVerifier = codeVerifier
+                CodeChallenge = codeChallenge
+                State = state
+                CallbackServerRunning = false
+            }
+        }
     
     /// Start callback server and get the port
     let startCallbackServer (port: PortNumber) : Result<PortNumber, AuthWorkflowError> =
@@ -88,12 +85,16 @@ type AuthenticationWorkflowService(services: AuthWorkflowServices) =
     
     /// Generate authorization URL and launch browser using workflow state
     let launchAuthorizationFlow (oauthConfig: SpotifyOAuthConfig) (workflowState: AuthWorkflowState) : Result<HttpUrl, AuthWorkflowError> =
-        services.OAuthService.GenerateAuthorizationUrl oauthConfig workflowState.State
-        |> Result.mapError (fun err -> ErrorConversion.oauthErrorToAuthWorkflowError err)
-        |> Result.bind (fun authUrl ->
-            BrowserServiceHelpers.launchBrowserWithFallback services.BrowserService authUrl
-            |> Result.mapError (fun err -> ErrorConversion.browserErrorToAuthWorkflowError err)
-            |> Result.map (fun _ -> authUrl))
+        result {
+            let! authUrl = 
+                services.OAuthService.GenerateAuthorizationUrl oauthConfig workflowState.State
+                |> Result.mapError (fun err -> ErrorConversion.oauthErrorToAuthWorkflowError err)
+            
+            do! BrowserServiceHelpers.launchBrowserWithFallback services.BrowserService authUrl
+                |> Result.mapError (fun err -> ErrorConversion.browserErrorToAuthWorkflowError err)
+            
+            return authUrl
+        }
     
     /// Wait for OAuth callback with timeout
     let waitForCallback (timeoutMinutes: int) : Task<Result<CallbackResult, AuthWorkflowError>> =
@@ -111,16 +112,18 @@ type AuthenticationWorkflowService(services: AuthWorkflowServices) =
     
     /// Validate callback result and extract authorization code using workflow state
     let processCallback (workflowState: AuthWorkflowState) (callbackResult: CallbackResult) : Result<AuthorizationCode, AuthWorkflowError> =
-        // Validate state parameter
-        OAuthServiceHelpers.validateState workflowState.State callbackResult.State
-        |> Result.mapError (fun err -> 
-            match err with
-            | StateValidationFailed(expected, received) -> StateValidationError(expected, received)
-            | other -> ErrorConversion.oauthErrorToAuthWorkflowError other)
-        |> Result.bind (fun _ ->
+        result {
+            // Validate state parameter
+            do! OAuthServiceHelpers.validateState workflowState.State callbackResult.State
+                |> Result.mapError (fun err -> 
+                    match err with
+                    | StateValidationFailed(expected, received) -> StateValidationError(expected, received)
+                    | other -> ErrorConversion.oauthErrorToAuthWorkflowError other)
+            
             // Extract authorization code
-            CallbackServerHelpers.extractAuthorizationCode callbackResult
-            |> Result.mapError (fun err -> ConfigurationError($"Callback processing failed: {err}")))
+            return! CallbackServerHelpers.extractAuthorizationCode callbackResult
+                    |> Result.mapError (fun err -> ConfigurationError($"Callback processing failed: {err}"))
+        }
     
     /// Exchange authorization code for tokens using stored PKCE verifier
     let exchangeCodeForTokens (oauthConfig: SpotifyOAuthConfig) (workflowState: AuthWorkflowState) (authCode: AuthorizationCode) : Result<TokenStorage, AuthWorkflowError> =
@@ -130,12 +133,15 @@ type AuthenticationWorkflowService(services: AuthWorkflowServices) =
     
     /// Save tokens to configuration storage
     let saveTokens (tokenStorage: TokenStorage) : Result<string, AuthWorkflowError> =
-        services.ConfigService.EnsureConfigDirectory()
-        |> Result.mapError (fun err -> ErrorConversion.configErrorToAuthWorkflowError err)
-        |> Result.bind (fun _ ->
-            services.ConfigService.WriteTokens(tokenStorage)
-            |> Result.mapError (fun err -> ErrorConversion.configErrorToAuthWorkflowError err)
-            |> Result.map (fun _ -> services.ConfigService.GetConfigPath()))
+        result {
+            do! services.ConfigService.EnsureConfigDirectory()
+                |> Result.mapError (fun err -> ErrorConversion.configErrorToAuthWorkflowError err)
+            
+            do! services.ConfigService.WriteTokens(tokenStorage)
+                |> Result.mapError (fun err -> ErrorConversion.configErrorToAuthWorkflowError err)
+            
+            return services.ConfigService.GetConfigPath()
+        }
     
     /// Stop the callback server and clean up resources
     let stopCallbackServer () : Result<unit, AuthWorkflowError> =
@@ -144,32 +150,22 @@ type AuthenticationWorkflowService(services: AuthWorkflowServices) =
     
     /// Complete authentication workflow
     let completeAuthenticationWorkflow (config: AuthWorkflowConfig) : Task<Result<AuthWorkflowResult, AuthWorkflowError>> =
-        task {
+        taskResult {
             try
                 // Step 1: Create OAuth configuration
-                match createOAuthConfig config with
-                | Error err -> return Error err
-                | Ok oauthConfig ->
+                let! oauthConfig = createOAuthConfig config
                 
                 // Step 2: Generate PKCE parameters and secure state
-                match generateAuthWorkflowState() with
-                | Error err -> return Error err
-                | Ok workflowState ->
+                let! workflowState = generateAuthWorkflowState()
                 
                 // Step 3: Start callback server
-                match startCallbackServer config.CallbackPort with
-                | Error err -> return Error err
-                | Ok actualPort ->
+                let! actualPort = startCallbackServer config.CallbackPort
                 
                 // Step 4: Launch browser with authorization URL
                 Console.WriteLine("🔐 Starting Spotify OAuth authentication...")
                 Console.WriteLine()
                 
-                match launchAuthorizationFlow oauthConfig workflowState with
-                | Error err ->
-                    let _ = stopCallbackServer() // Best effort cleanup
-                    return Error err
-                | Ok authUrl ->
+                let! authUrl = launchAuthorizationFlow oauthConfig workflowState
                 
                 Console.WriteLine("📱 Please complete the authorization in your browser")
                 Console.WriteLine($"   Authorization URL: {TypeExtraction.getHttpUrl authUrl}")
@@ -178,54 +174,34 @@ type AuthenticationWorkflowService(services: AuthWorkflowServices) =
                 Console.WriteLine("⏳ Waiting for authorization callback...")
                 
                 // Step 5: Wait for callback
-                let! callbackResult = waitForCallback config.TimeoutMinutes
-                match callbackResult with
-                | Error err ->
-                    let _ = stopCallbackServer() // Best effort cleanup
-                    return Error err
-                | Ok callback ->
+                let! callback = waitForCallback config.TimeoutMinutes
                 
                 // Step 6: Process callback and extract authorization code
-                match processCallback workflowState callback with
-                | Error err ->
-                    let _ = stopCallbackServer() // Best effort cleanup
-                    return Error err
-                | Ok authCode ->
+                let! authCode = processCallback workflowState callback
                 
                 Console.WriteLine("✅ Authorization callback received")
                 Console.WriteLine("🔄 Exchanging authorization code for access tokens...")
                 
                 // Step 7: Exchange code for tokens using stored PKCE verifier
-                match exchangeCodeForTokens oauthConfig workflowState authCode with
-                | Error err ->
-                    let _ = stopCallbackServer() // Best effort cleanup
-                    return Error err
-                | Ok tokenStorage ->
+                let! tokenStorage = exchangeCodeForTokens oauthConfig workflowState authCode
                 
                 // Step 8: Save tokens
-                match saveTokens tokenStorage with
-                | Error err ->
-                    let _ = stopCallbackServer() // Best effort cleanup
-                    return Error err
-                | Ok configPath ->
+                let! configPath = saveTokens tokenStorage
                 
                 // Step 9: Clean up callback server
-                match stopCallbackServer() with
-                | Error err -> return Error err
-                | Ok _ ->
+                do! stopCallbackServer()
                 
                 // Success!
-                let result = {
+                return {
                     TokenStorage = tokenStorage
                     UserMessage = "🎉 Successfully authenticated with Spotify!"
                     ConfigPath = configPath
                 }
-                
-                return Ok result
+
             with
             | ex -> 
                 let _ = stopCallbackServer() // Best effort cleanup
-                return Error(UnexpectedWorkflowError ex.Message)
+                return! Error(UnexpectedWorkflowError ex.Message)
         }
     
     interface IAuthenticationWorkflowService with
@@ -234,34 +210,34 @@ type AuthenticationWorkflowService(services: AuthWorkflowServices) =
             completeAuthenticationWorkflow config
         
         member _.RefreshTokenIfNeeded(tokenStorage: TokenStorage) (oauthConfig: SpotifyOAuthConfig) =
-            task {
+            taskResult {
                 if OAuthServiceHelpers.isTokenNearExpiry tokenStorage then
                     Console.WriteLine("🔄 Access token is near expiry, refreshing...")
                     
-                    let refreshResult = services.OAuthService.RefreshAccessToken oauthConfig tokenStorage.RefreshToken
-                    match refreshResult with
-                    | Ok newTokenStorage ->
-                        // Save the new tokens
-                        match saveTokens newTokenStorage with
-                        | Ok _ ->
-                            Console.WriteLine("✅ Access token refreshed successfully")
-                            return Ok newTokenStorage
-                        | Error err ->
-                            return Error err
-                    | Error oauthErr ->
-                        return Error(ErrorConversion.oauthErrorToAuthWorkflowError oauthErr)
+                    let! newTokenStorage = 
+                        services.OAuthService.RefreshAccessToken oauthConfig tokenStorage.RefreshToken
+                        |> Result.mapError (fun err -> ErrorConversion.oauthErrorToAuthWorkflowError err)
+                    
+                    // Save the new tokens
+                    let! _ = saveTokens newTokenStorage
+                    
+                    Console.WriteLine("✅ Access token refreshed successfully")
+                    return newTokenStorage
                 else
-                    return Ok tokenStorage
+                    return tokenStorage
             }
         
         member _.ValidateExistingToken() =
-            services.ConfigService.ReadTokens()
-            |> Result.mapError (fun err -> ErrorConversion.configErrorToAuthWorkflowError err)
-            |> Result.bind (fun tokenStorage ->
+            result {
+                let! tokenStorage = 
+                    services.ConfigService.ReadTokens()
+                    |> Result.mapError (fun err -> ErrorConversion.configErrorToAuthWorkflowError err)
+                
                 if DomainValidation.isTokenExpired tokenStorage then
-                    Error(ErrorConversion.configErrorToAuthWorkflowError(ConfigError.InvalidFormat "Token has expired"))
+                    return! Error(ErrorConversion.configErrorToAuthWorkflowError(ConfigError.InvalidFormat "Token has expired"))
                 else
-                    Ok tokenStorage)
+                    return tokenStorage
+            }
 
 /// Factory functions for creating authentication workflow service
 module AuthenticationWorkflowService =
@@ -311,7 +287,7 @@ module AuthenticationWorkflowHelpers =
             Console.WriteLine()
             
             let! result = workflowService.StartAuthenticationFlow(config)
-            
+
             match result with
             | Ok authResult ->
                 Console.WriteLine()

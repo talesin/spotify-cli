@@ -7,6 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningsAsErrors />
     <WarningsNotAsErrors>FS0025</WarningsNotAsErrors>
+    <FSharpCoreImplicitPackageVersion>9.0.300</FSharpCoreImplicitPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,6 +31,7 @@
   <ItemGroup>
     <PackageReference Include="Argu" Version="6.2.4" />
     <PackageReference Include="FSharp.SystemTextJson" Version="1.3.13" />
+    <PackageReference Include="FsToolkit.ErrorHandling" Version="5.0.1" />
   </ItemGroup>
 
   <!-- Test dependencies - temporarily commented out to test basic foundation

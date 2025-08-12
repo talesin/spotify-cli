@@ -4,6 +4,7 @@ open System
 open System.Net.Http
 open System.Text
 open System.Threading.Tasks
+open FsToolkit.ErrorHandling
 open SpotifyCLI.Domain
 
 /// HTTP request configuration
@@ -54,7 +55,7 @@ type SystemHttpClient() =
     
     interface IHttpClient with
         member _.SendAsync(request: HttpRequest) =
-            task {
+            taskResult {
                 try
                     let url = TypeExtraction.getHttpUrl request.Url
                     
@@ -91,18 +92,18 @@ type SystemHttpClient() =
                     }
                     
                     if response.IsSuccessStatusCode then
-                        return Ok httpResponse
+                        return httpResponse
                     else
                         let error = mapStatusCodeToError (int response.StatusCode) content
-                        return Error error
+                        return! Error error
                         
                 with
                 | :? TaskCanceledException ->
-                    return Error(NetworkTimeout request.TimeoutMs)
+                    return! Error(NetworkTimeout request.TimeoutMs)
                 | :? HttpRequestException as ex ->
-                    return Error(ServerError(0, ex.Message))
+                    return! Error(ServerError(0, ex.Message))
                 | ex ->
-                    return Error(ServerError(0, $"HTTP request failed: {ex.Message}"))
+                    return! Error(ServerError(0, $"HTTP request failed: {ex.Message}"))
             }
     
     interface IDisposable with

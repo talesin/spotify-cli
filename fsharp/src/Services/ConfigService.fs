@@ -5,6 +5,7 @@ open System.IO
 open System.Text.Json
 open System.Text.Json.Serialization
 open FSharp.SystemTextJson
+open FsToolkit.ErrorHandling
 open SpotifyCLI.Domain
 
 /// File system abstraction for dependency injection following F# coding guide
@@ -105,15 +106,18 @@ type ConfigService(fileSystem: IFileSystem) =
             match fileSystem.FileExists(configFilePath) with
             | false -> Error(ConfigError.FileNotFound configFilePath)
             | true ->
-                fileSystem.ReadAllText(configFilePath)
-                |> Result.mapError mapFileSystemError
-                |> Result.bind (fun jsonContent ->
+                result {
+                    let! jsonContent = 
+                        fileSystem.ReadAllText(configFilePath)
+                        |> Result.mapError mapFileSystemError
+                    
                     try
                         let tokenJson = JsonSerializer.Deserialize<TokenStorageJson>(jsonContent, jsonOptions)
-                        Ok(fromJsonTokenStorage tokenJson)
+                        return fromJsonTokenStorage tokenJson
                     with
-                    | :? JsonException as ex -> Error(ConfigError.InvalidFormat ex.Message)
-                    | ex -> Error(ConfigError.InvalidFormat ex.Message))
+                    | :? JsonException as ex -> return! Error(ConfigError.InvalidFormat ex.Message)
+                    | ex -> return! Error(ConfigError.InvalidFormat ex.Message)
+                }
         
         member _.WriteTokens(tokens: TokenStorage) =
             let jsonTokens = toJsonTokenStorage tokens
@@ -153,12 +157,13 @@ module ConfigServiceHelpers =
             not (DomainValidation.isTokenExpired tokens))
     
     let getValidTokenOrError (configService: IConfigService) : Result<TokenStorage, ConfigError> =
-        configService.ReadTokens()
-        |> Result.bind (fun tokens ->
+        result {
+            let! tokens = configService.ReadTokens()
             if DomainValidation.isTokenExpired tokens then
-                Error(ConfigError.InvalidFormat "Token has expired")
+                return! Error(ConfigError.InvalidFormat "Token has expired")
             else
-                Ok tokens)
+                return tokens
+        }
     
     let updateTokenExpiry (tokens: TokenStorage) (expiresInSeconds: int) : TokenStorage =
         { tokens with ExpiresAt = DateTime.UtcNow.AddSeconds(float expiresInSeconds) }

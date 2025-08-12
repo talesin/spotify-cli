@@ -3,6 +3,7 @@ namespace SpotifyCLI.Services
 open System
 open System.Security.Cryptography
 open System.Text
+open FsToolkit.ErrorHandling
 open SpotifyCLI.Domain
 
 /// Cryptographic operations abstraction for dependency injection
@@ -39,8 +40,10 @@ type SystemCryptoService() =
     
     /// Generate URL-safe random string of specified length
     let generateUrlSafeString (length: int) : Result<string, CryptoError> =
-        generateRandomBytes length
-        |> Result.bind encodeBase64Url
+        result {
+            let! randomBytes = generateRandomBytes length
+            return! encodeBase64Url randomBytes
+        }
     
     /// Compute SHA256 hash of input string
     let computeSHA256Hash (input: string) : Result<byte[], CryptoError> =
@@ -68,9 +71,11 @@ type SystemCryptoService() =
         
         member _.GenerateCodeChallenge(codeVerifier: CodeVerifier) =
             let verifierString = TypeExtraction.getCodeVerifier codeVerifier
-            computeSHA256Hash verifierString
-            |> Result.bind encodeBase64Url
-            |> Result.map CodeChallenge
+            result {
+                let! hashBytes = computeSHA256Hash verifierString
+                let! encoded = encodeBase64Url hashBytes
+                return CodeChallenge encoded
+            }
         
         member _.GenerateState() =
             // OAuth state parameter: 32 URL-safe characters
@@ -88,10 +93,11 @@ module CryptoServiceHelpers =
     
     /// Generate complete PKCE pair (verifier and challenge)
     let generatePKCEPair (cryptoService: ICryptoService) : Result<CodeVerifier * CodeChallenge, CryptoError> =
-        cryptoService.GenerateCodeVerifier()
-        |> Result.bind (fun verifier ->
-            cryptoService.GenerateCodeChallenge(verifier)
-            |> Result.map (fun challenge -> (verifier, challenge)))
+        result {
+            let! verifier = cryptoService.GenerateCodeVerifier()
+            let! challenge = cryptoService.GenerateCodeChallenge(verifier)
+            return (verifier, challenge)
+        }
     
     /// Validate code verifier format (URL-safe base64, 43-128 chars)
     let isValidCodeVerifier (verifier: string) : bool =

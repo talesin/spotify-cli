@@ -4,6 +4,7 @@ open System
 open System.Diagnostics
 open System.IO
 open System.Runtime.InteropServices
+open FsToolkit.ErrorHandling
 open SpotifyCLI.Domain
 
 /// Browser platform detection results
@@ -96,9 +97,10 @@ type SystemBrowserService() =
         
         member _.LaunchBrowser(url: HttpUrl) =
             let platform = detectCurrentPlatform()
-            getBrowserCommand platform
-            |> Result.bind (fun (command, args) ->
-                launchBrowserWithUrl command args url)
+            result {
+                let! (command, args) = getBrowserCommand platform
+                return! launchBrowserWithUrl command args url
+            }
         
         member _.GetDefaultBrowserCommand(platform: BrowserPlatform) =
             getBrowserCommand platform

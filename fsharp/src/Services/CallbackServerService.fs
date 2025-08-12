@@ -7,6 +7,7 @@ open System.Text
 open System.Threading
 open System.Threading.Tasks
 open System.Web
+open FsToolkit.ErrorHandling
 open SpotifyCLI.Domain
 
 /// OAuth callback result from authorization server
@@ -208,10 +209,10 @@ type HttpCallbackServerService() =
                 Error(ServerStartFailed(TypeExtraction.getPortNumber config.Port, ex.Message))
         
         member _.WaitForCallback(cancellationToken: CancellationToken) =
-            task {
+            taskResult {
                 match httpListener with
                 | None -> 
-                    return Error(ServerStartFailed(0, "Server not started"))
+                    return! Error(ServerStartFailed(0, "Server not started"))
                 | Some listener ->
                     try
                         // Wait for incoming request with cancellation support
@@ -228,12 +229,12 @@ type HttpCallbackServerService() =
                         let result = handleCallbackRequest context config
                         callbackResult <- Some result
                         
-                        return Ok result
+                        return result
                     with
                     | :? OperationCanceledException ->
-                        return Error(CallbackTimeout 30000)
+                        return! Error(CallbackTimeout 30000)
                     | ex ->
-                        return Error(InvalidCallback ex.Message)
+                        return! Error(InvalidCallback ex.Message)
             }
         
         member _.StopCallbackServer() =
