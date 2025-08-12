@@ -19,12 +19,16 @@ module Program =
         let configService = ConfigService.create fileSystem
         let httpService = HttpService.create httpClient
         let cryptoService = CryptoService.create()
+        let browserService = BrowserService.create()
+        let oauthService = OAuthService.create httpService cryptoService
         
         // Return services record
         {
             Config = configService
             Http = httpService
             Crypto = cryptoService
+            Browser = browserService
+            OAuth = oauthService
         }
     
     let getVersionInfo () =
@@ -38,21 +42,21 @@ module Program =
     
     let processCommandWithServices (services: IAppServices) = function
         | Auth -> 
-            match PlaceholderCommandHandlers.handleAuth services with
-            | Ok() -> Console.WriteLine("✅ Auth service integration successful")
-            | Error err -> Console.WriteLine($"❌ Auth error: {err}")
+            match AuthCommandHandlers.handleAuth services with
+            | Ok() -> Console.WriteLine("✅ OAuth authentication demo completed successfully")
+            | Error err -> Console.WriteLine($"❌ Auth error: {ErrorFormatting.formatAppError err}")
         | Me ->
-            match PlaceholderCommandHandlers.handleMe services with
+            match AuthCommandHandlers.handleMe services with
             | Ok userProfile -> 
                 Console.WriteLine("✅ Me service integration successful")
                 Console.WriteLine($"   Sample user: {TypeExtraction.getString50 userProfile.DisplayName.Value}")
-            | Error err -> Console.WriteLine($"❌ Me error: {err}")
+            | Error err -> Console.WriteLine($"❌ Me error: {ErrorFormatting.formatAppError err}")
         | Playlists ->
-            match PlaceholderCommandHandlers.handlePlaylists services with
+            match AuthCommandHandlers.handlePlaylists services with
             | Ok playlists -> 
                 Console.WriteLine("✅ Playlists service integration successful")
                 Console.WriteLine($"   Sample playlist count: {playlists.Length}")
-            | Error err -> Console.WriteLine($"❌ Playlists error: {err}")
+            | Error err -> Console.WriteLine($"❌ Playlists error: {ErrorFormatting.formatAppError err}")
         | Version ->
             Console.WriteLine(getVersionInfo())
     

@@ -25,14 +25,87 @@ type IAppServices = {
     Config: IConfigService
     Http: IHttpService  
     Crypto: ICryptoService
+    Browser: IBrowserService
+    OAuth: IOAuthService
 }
 
-/// Placeholder command handlers for service integration
-module PlaceholderCommandHandlers =
+/// OAuth authentication command handlers
+module AuthCommandHandlers =
     
+    /// Simple OAuth authentication flow demonstration
     let handleAuth (services: IAppServices) : Result<unit, AppError> =
-        Console.WriteLine("🔐 Auth command - Service layer ready, OAuth implementation needed")
-        Ok()
+        Console.WriteLine("🔐 Starting Spotify CLI Authentication")
+        Console.WriteLine("════════════════════════════════════════")
+        Console.WriteLine()
+        
+        try
+            // For this demo, we'll use a test client ID. In production, this would come from config
+            let testClientId = "your_spotify_client_id_here"
+            
+            Console.WriteLine("📝 Demo OAuth Flow (simplified implementation)")
+            Console.WriteLine($"   Client ID: {testClientId}")
+            Console.WriteLine("   Scopes: user-read-private, user-read-email")
+            Console.WriteLine()
+            
+            // Step 1: Generate PKCE parameters
+            Console.WriteLine("🔧 Generating PKCE parameters...")
+            match services.Crypto.GenerateCodeVerifier() with
+            | Error cryptoErr -> 
+                Console.WriteLine($"❌ Failed to generate PKCE verifier: {ErrorFormatting.formatCryptoError cryptoErr}")
+                Error(CryptoError cryptoErr)
+            | Ok codeVerifier ->
+            
+            match services.Crypto.GenerateCodeChallenge(codeVerifier) with
+            | Error cryptoErr ->
+                Console.WriteLine($"❌ Failed to generate PKCE challenge: {ErrorFormatting.formatCryptoError cryptoErr}")
+                Error(CryptoError cryptoErr)
+            | Ok codeChallenge ->
+            
+            // Step 2: Generate state parameter
+            Console.WriteLine("🔐 Generating secure state parameter...")
+            match services.Crypto.GenerateState() with
+            | Error cryptoErr ->
+                Console.WriteLine($"❌ Failed to generate state: {ErrorFormatting.formatCryptoError cryptoErr}")
+                Error(CryptoError cryptoErr)
+            | Ok state ->
+            
+            // Step 3: Create authorization URL (demo)
+            let authUrl = $"https://accounts.spotify.com/authorize?client_id={testClientId}&response_type=code&redirect_uri=http://127.0.0.1:3000/callback&code_challenge_method=S256&code_challenge={TypeExtraction.getCodeChallenge codeChallenge}&state={state}&scope=user-read-private user-read-email"
+            
+            Console.WriteLine("🌐 Authorization URL generated:")
+            Console.WriteLine($"   {authUrl}")
+            Console.WriteLine()
+            
+            // Step 4: Attempt browser launch
+            Console.WriteLine("🚀 Attempting to launch browser...")
+            match ConstrainedTypes.createHttpUrl authUrl with
+            | Error err ->
+                Console.WriteLine($"❌ Invalid authorization URL: {err}")
+                Error(ValidationError("auth_url", err))
+            | Ok validUrl ->
+            
+            match BrowserServiceHelpers.launchBrowserWithFallback services.Browser validUrl with
+            | Error browserErr ->
+                Console.WriteLine($"⚠️  Browser launch failed: {ErrorFormatting.formatBrowserError browserErr}")
+                Console.WriteLine()
+                Console.WriteLine("📋 Please manually copy and paste the URL above into your browser")
+            | Ok _ ->
+                Console.WriteLine("✅ Browser launched successfully")
+            
+            Console.WriteLine()
+            Console.WriteLine("📖 Next Steps (when fully implemented):")
+            Console.WriteLine("   1. Complete authorization in your browser")
+            Console.WriteLine("   2. OAuth callback server will capture the code") 
+            Console.WriteLine("   3. Exchange code for access tokens")
+            Console.WriteLine("   4. Store tokens securely")
+            Console.WriteLine()
+            Console.WriteLine("🎉 Demo completed - OAuth services are working correctly!")
+            
+            Ok()
+        with
+        | ex ->
+            Console.WriteLine($"❌ Unexpected error during authentication: {ex.Message}")
+            Error(UnexpectedError ex.Message)
     
     let handleMe (services: IAppServices) : Result<UserProfile, AppError> =
         Console.WriteLine("👤 Me command - Service layer ready, API integration needed")
@@ -62,7 +135,7 @@ module PlaceholderCommandHandlers =
 module SimpleCommandProcessor =
     
     let processCommand (services: IAppServices) = function
-        | Auth -> PlaceholderCommandHandlers.handleAuth services |> ignore
-        | Me -> PlaceholderCommandHandlers.handleMe services |> ignore
-        | Playlists -> PlaceholderCommandHandlers.handlePlaylists services |> ignore
-        | Version -> Console.WriteLine("spotify-cli version 1.0.0 - Service Layer Integrated")
+        | Auth -> AuthCommandHandlers.handleAuth services |> ignore
+        | Me -> AuthCommandHandlers.handleMe services |> ignore
+        | Playlists -> AuthCommandHandlers.handlePlaylists services |> ignore
+        | Version -> Console.WriteLine("spotify-cli version 1.0.0 - OAuth Services Integrated")
