@@ -192,9 +192,12 @@ type HttpCallbackServerService() =
                 else
                     let listener = new HttpListener()
                     let port = TypeExtraction.getPortNumber config.Port
-                    let prefix = $"http://localhost:{port}/"
+                    // Listen on both 127.0.0.1 and localhost for the callback endpoint
+                    let prefix1 = $"http://127.0.0.1:{port}/callback/"
+                    let prefix2 = $"http://localhost:{port}/callback/"
                     
-                    listener.Prefixes.Add(prefix)
+                    listener.Prefixes.Add(prefix1)
+                    listener.Prefixes.Add(prefix2)
                     listener.Start()
                     
                     httpListener <- Some listener
@@ -315,7 +318,7 @@ module CallbackServerHelpers =
         try
             use listener = new HttpListener()
             let portNum = TypeExtraction.getPortNumber port
-            listener.Prefixes.Add($"http://localhost:{portNum}/")
+            listener.Prefixes.Add($"http://127.0.0.1:{portNum}/callback/")
             listener.Start()
             listener.Stop()
             true

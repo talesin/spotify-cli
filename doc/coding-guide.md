@@ -21,12 +21,12 @@ Write thorough tests for all code.
 
 # TypeScript
 
-Refer to the typescript-coding-guide.md for coding standards.
+Refer to the [typescript-coding-guide.md](typescript-coding-guide.md) for coding standards.
 
 # React
 
-Refer to the react-coding-guide.md for coding standards.
+Refer to the [react-coding-guide.md](react-coding-guide.md) for coding standards.
 
 # F#
 
-Refer to the fsharp-coding-guide.md for coding standards.
+Refer to the [fsharp-coding-guide.md](fsharp-coding-guide.md) for coding standards.

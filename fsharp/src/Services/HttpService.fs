@@ -49,6 +49,7 @@ type SystemHttpClient() =
         | 401 -> Unauthorized
         | 403 -> Forbidden content
         | 404 -> NotFound
+        | 415 -> ServerError(415, $"Unsupported Media Type - Content-Type header may be incorrect: {content}")
         | 429 -> RateLimited None
         | code when code >= 500 -> ServerError(code, content)
         | _ -> ServerError(statusCode, $"Unexpected status code: {statusCode}")
@@ -72,7 +73,13 @@ type SystemHttpClient() =
                     // Add body if present
                     match request.Body with
                     | Some body when request.Method = HttpMethod.Post || request.Method = HttpMethod.Put ->
-                        httpRequestMessage.Content <- new StringContent(body, Encoding.UTF8, "application/json")
+                        // Detect content type from headers or default to JSON
+                        let contentType = 
+                            request.Headers
+                            |> Map.tryFind "Content-Type"
+                            |> Option.defaultValue "application/json"
+                        
+                        httpRequestMessage.Content <- new StringContent(body, Encoding.UTF8, contentType)
                     | _ -> ()
                     
                     // Send request

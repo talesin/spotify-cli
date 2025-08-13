@@ -11,6 +11,7 @@ open SpotifyCLI.Domain
 [<Struct>]
 type SpotifyOAuthConfig = {
     ClientId: string
+    ClientSecret: string
     RedirectUri: HttpUrl
     Scopes: string list
     AuthorizationBaseUrl: HttpUrl
@@ -37,7 +38,7 @@ type OAuthErrorResponse = {
 
 /// OAuth service interface for dependency injection
 type IOAuthService =
-    abstract GenerateAuthorizationUrl: SpotifyOAuthConfig -> string -> Result<HttpUrl, OAuthError>
+    abstract GenerateAuthorizationUrl: SpotifyOAuthConfig -> string -> CodeChallenge -> Result<HttpUrl, OAuthError>
     abstract ExchangeCodeForTokens: SpotifyOAuthConfig -> AuthorizationCode -> CodeVerifier -> Result<TokenStorage, OAuthError>
     abstract RefreshAccessToken: SpotifyOAuthConfig -> RefreshToken -> Result<TokenStorage, OAuthError>
     abstract ValidateConfiguration: SpotifyOAuthConfig -> Result<unit, OAuthError>
@@ -72,19 +73,10 @@ type SpotifyOAuthService(httpService: IHttpService, cryptoService: ICryptoServic
         else
             Ok()
     
-    /// Generate authorization URL with PKCE challenge
-    let generateAuthUrl (config: SpotifyOAuthConfig) (state: string) : Result<HttpUrl, OAuthError> =
+    /// Generate authorization URL with provided PKCE challenge
+    let generateAuthUrl (config: SpotifyOAuthConfig) (state: string) (codeChallenge: CodeChallenge) : Result<HttpUrl, OAuthError> =
         result {
-            // Generate PKCE pair
-            let! codeVerifier = 
-                cryptoService.GenerateCodeVerifier()
-                |> Result.mapError (fun err -> AuthorizationUrlGenerationFailed($"PKCE generation failed: {ErrorFormatting.formatCryptoError err}"))
-            
-            let! codeChallenge = 
-                cryptoService.GenerateCodeChallenge(codeVerifier)
-                |> Result.mapError (fun err -> AuthorizationUrlGenerationFailed($"PKCE challenge generation failed: {ErrorFormatting.formatCryptoError err}"))
-            
-            // Build query parameters
+            // Build query parameters using provided PKCE challenge
             let queryParams = [
                 ("client_id", config.ClientId)
                 ("response_type", "code")
@@ -153,6 +145,7 @@ type SpotifyOAuthService(httpService: IHttpService, cryptoService: ICryptoServic
         let formData = [
             ("grant_type", "authorization_code")
             ("client_id", config.ClientId)
+            ("client_secret", config.ClientSecret)
             ("code", TypeExtraction.getAuthorizationCode authCode)
             ("redirect_uri", TypeExtraction.getHttpUrl config.RedirectUri)
             ("code_verifier", TypeExtraction.getCodeVerifier codeVerifier)
@@ -164,8 +157,9 @@ type SpotifyOAuthService(httpService: IHttpService, cryptoService: ICryptoServic
             |> String.concat "&"
         
         // Set up headers for form submission
-        let headers = HttpServiceHelpers.createJsonContentTypeHeader()
-        let formHeaders = Map.add "Content-Type" "application/x-www-form-urlencoded" headers
+        let formHeaders = Map.ofList [
+            ("Content-Type", "application/x-www-form-urlencoded")
+        ]
         
         // Make token exchange request and parse response
         result {
@@ -188,6 +182,7 @@ type SpotifyOAuthService(httpService: IHttpService, cryptoService: ICryptoServic
         let formData = [
             ("grant_type", "refresh_token")
             ("client_id", config.ClientId)
+            ("client_secret", config.ClientSecret)
             ("refresh_token", TypeExtraction.getRefreshToken refreshToken)
         ]
         
@@ -197,8 +192,9 @@ type SpotifyOAuthService(httpService: IHttpService, cryptoService: ICryptoServic
             |> String.concat "&"
         
         // Set up headers for form submission
-        let headers = HttpServiceHelpers.createJsonContentTypeHeader()
-        let formHeaders = Map.add "Content-Type" "application/x-www-form-urlencoded" headers
+        let formHeaders = Map.ofList [
+            ("Content-Type", "application/x-www-form-urlencoded")
+        ]
         
         // Make token refresh request and parse response
         result {
@@ -224,10 +220,10 @@ type SpotifyOAuthService(httpService: IHttpService, cryptoService: ICryptoServic
     
     interface IOAuthService with
         
-        member _.GenerateAuthorizationUrl(config: SpotifyOAuthConfig) (state: string) =
+        member _.GenerateAuthorizationUrl(config: SpotifyOAuthConfig) (state: string) (codeChallenge: CodeChallenge) =
             result {
                 do! validateConfig config
-                return! generateAuthUrl config state
+                return! generateAuthUrl config state codeChallenge
             }
         
         member _.ExchangeCodeForTokens(config: SpotifyOAuthConfig) (authCode: AuthorizationCode) (codeVerifier: CodeVerifier) =
@@ -259,7 +255,7 @@ module OAuthServiceHelpers =
     let private spotifyTokenUrl = "https://accounts.spotify.com/api/token"
     
     /// Create default Spotify OAuth configuration
-    let createSpotifyOAuthConfig (clientId: string) (redirectPort: PortNumber) : Result<SpotifyOAuthConfig, OAuthError> =
+    let createSpotifyOAuthConfig (clientId: string) (clientSecret: string) (redirectPort: PortNumber) : Result<SpotifyOAuthConfig, OAuthError> =
         let port = TypeExtraction.getPortNumber redirectPort
         
         result {
@@ -277,6 +273,43 @@ module OAuthServiceHelpers =
             
             return {
                 ClientId = clientId
+                ClientSecret = clientSecret
+                RedirectUri = redirectUri
+                Scopes = [ "user-read-private"; "user-read-email"; "playlist-read-private" ]
+                AuthorizationBaseUrl = authBaseUrl
+                TokenBaseUrl = tokenBaseUrl
+            }
+        }
+    
+    /// Create Spotify OAuth configuration from environment variables
+    let createSpotifyOAuthConfigFromEnvironment (configService: IConfigService) (redirectPort: PortNumber) : Result<SpotifyOAuthConfig, OAuthError> =
+        result {
+            let! clientId = 
+                configService.GetSpotifyClientId()
+                |> Result.mapError (fun err -> InvalidConfiguration($"Failed to load client ID: {ErrorFormatting.formatConfigError err}"))
+            
+            let! clientSecret = 
+                configService.GetSpotifyClientSecret()
+                |> Result.mapError (fun err -> InvalidConfiguration($"Failed to load client secret: {ErrorFormatting.formatConfigError err}"))
+            
+            let! redirectUri = 
+                configService.GetSpotifyRedirectUri()
+                |> Result.mapError (fun err -> InvalidConfiguration($"Failed to load redirect URI: {ErrorFormatting.formatConfigError err}"))
+                |> Result.bind (fun uri -> 
+                    ConstrainedTypes.createHttpUrl uri
+                    |> Result.mapError (fun err -> InvalidConfiguration($"Invalid redirect URI: {err}")))
+            
+            let! authBaseUrl = 
+                ConstrainedTypes.createHttpUrl spotifyAuthorizationUrl
+                |> Result.mapError (fun err -> InvalidConfiguration($"Invalid authorization URL: {err}"))
+            
+            let! tokenBaseUrl = 
+                ConstrainedTypes.createHttpUrl spotifyTokenUrl
+                |> Result.mapError (fun err -> InvalidConfiguration($"Invalid token URL: {err}"))
+            
+            return {
+                ClientId = clientId
+                ClientSecret = clientSecret
                 RedirectUri = redirectUri
                 Scopes = [ "user-read-private"; "user-read-email"; "playlist-read-private" ]
                 AuthorizationBaseUrl = authBaseUrl

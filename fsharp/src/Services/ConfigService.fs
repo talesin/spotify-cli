@@ -56,6 +56,9 @@ type IConfigService =
     abstract WriteTokens: TokenStorage -> Result<unit, ConfigError>
     abstract EnsureConfigDirectory: unit -> Result<unit, ConfigError>
     abstract GetConfigPath: unit -> string
+    abstract GetSpotifyClientId: unit -> Result<string, ConfigError>
+    abstract GetSpotifyClientSecret: unit -> Result<string, ConfigError>
+    abstract GetSpotifyRedirectUri: unit -> Result<string, ConfigError>
 
 /// JSON serialization types for token storage
 [<Struct>]
@@ -137,6 +140,21 @@ type ConfigService(fileSystem: IFileSystem) =
                 |> Result.mapError mapFileSystemError
         
         member _.GetConfigPath() = configFilePath
+        
+        member _.GetSpotifyClientId() =
+            match Environment.GetEnvironmentVariable("SPOTIFY_CLIENT_ID") with
+            | null | "" -> Error(ConfigError.InvalidFormat "SPOTIFY_CLIENT_ID environment variable not set")
+            | clientId -> Ok clientId
+        
+        member _.GetSpotifyClientSecret() =
+            match Environment.GetEnvironmentVariable("SPOTIFY_CLIENT_SECRET") with
+            | null | "" -> Error(ConfigError.InvalidFormat "SPOTIFY_CLIENT_SECRET environment variable not set")
+            | clientSecret -> Ok clientSecret
+        
+        member _.GetSpotifyRedirectUri() =
+            match Environment.GetEnvironmentVariable("SPOTIFY_REDIRECT_URI") with
+            | null | "" -> Ok "http://127.0.0.1:3000/callback" // Default fallback
+            | redirectUri -> Ok redirectUri
 
 /// Factory function for creating ConfigService following F# coding guide
 module ConfigService =

@@ -22,6 +22,10 @@ module Program =
         let browserService = BrowserService.create()
         let oauthService = OAuthService.create httpService cryptoService
         
+        // Create authentication workflow services
+        let authWorkflowServices = AuthenticationWorkflowHelpers.createAuthWorkflowServices configService httpService cryptoService
+        let authWorkflowService = AuthenticationWorkflowService.create authWorkflowServices
+        
         // Return services record
         {
             Config = configService
@@ -29,7 +33,17 @@ module Program =
             Crypto = cryptoService
             Browser = browserService
             OAuth = oauthService
+            AuthWorkflow = authWorkflowService
         }
+    
+    /// Validate environment configuration for OAuth
+    let validateEnvironmentConfig (configService: IConfigService) : Result<unit, string> =
+        match configService.GetSpotifyClientId() with
+        | Error _ -> Error("SPOTIFY_CLIENT_ID environment variable not set")
+        | Ok _ ->
+            match configService.GetSpotifyClientSecret() with
+            | Error _ -> Error("SPOTIFY_CLIENT_SECRET environment variable not set")  
+            | Ok _ -> Ok()
     
     let getVersionInfo () =
         let version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version
@@ -42,9 +56,23 @@ module Program =
     
     let processCommandWithServices (services: IAppServices) = function
         | Auth -> 
-            match AuthCommandHandlers.handleAuth services with
-            | Ok() -> Console.WriteLine("✅ OAuth authentication demo completed successfully")
-            | Error err -> Console.WriteLine($"❌ Auth error: {ErrorFormatting.formatAppError err}")
+            // Validate environment configuration before attempting auth
+            match validateEnvironmentConfig services.Config with
+            | Error envErr ->
+                Console.WriteLine("❌ Environment Configuration Error:")
+                Console.WriteLine($"   {envErr}")
+                Console.WriteLine()
+                Console.WriteLine("🔧 Setup Instructions:")
+                Console.WriteLine("   1. Ensure .envrc file exists in project root")
+                Console.WriteLine("   2. Run 'direnv allow' to load environment variables")
+                Console.WriteLine("   3. Verify these variables are set:")
+                Console.WriteLine("      - SPOTIFY_CLIENT_ID")
+                Console.WriteLine("      - SPOTIFY_CLIENT_SECRET") 
+                Console.WriteLine("      - SPOTIFY_REDIRECT_URI (optional, defaults to http://127.0.0.1:3000/callback)")
+            | Ok() ->
+                match AuthCommandHandlers.handleAuth services with
+                | Ok() -> () // Success message is already printed in handleAuth
+                | Error err -> Console.WriteLine($"❌ Auth error: {ErrorFormatting.formatAppError err}")
         | Me ->
             match AuthCommandHandlers.handleMe services with
             | Ok userProfile -> 

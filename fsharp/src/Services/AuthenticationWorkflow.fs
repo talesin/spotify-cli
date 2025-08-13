@@ -52,11 +52,11 @@ type IAuthenticationWorkflowService =
 /// Authentication workflow service implementation
 type AuthenticationWorkflowService(services: AuthWorkflowServices) =
     
-    /// Create Spotify OAuth configuration from workflow config
+    /// Create Spotify OAuth configuration from environment variables
     let createOAuthConfig (config: AuthWorkflowConfig) : Result<SpotifyOAuthConfig, AuthWorkflowError> =
         let scopes = OAuthServiceHelpers.getRecommendedScopes config.IncludePlaylistAccess
         
-        OAuthServiceHelpers.createSpotifyOAuthConfig config.SpotifyClientId config.CallbackPort
+        OAuthServiceHelpers.createSpotifyOAuthConfigFromEnvironment services.ConfigService config.CallbackPort
         |> Result.mapError (fun err -> ErrorConversion.oauthErrorToAuthWorkflowError err)
         |> Result.map (fun oauthConfig -> { oauthConfig with Scopes = scopes })
     
@@ -87,7 +87,7 @@ type AuthenticationWorkflowService(services: AuthWorkflowServices) =
     let launchAuthorizationFlow (oauthConfig: SpotifyOAuthConfig) (workflowState: AuthWorkflowState) : Result<HttpUrl, AuthWorkflowError> =
         result {
             let! authUrl = 
-                services.OAuthService.GenerateAuthorizationUrl oauthConfig workflowState.State
+                services.OAuthService.GenerateAuthorizationUrl oauthConfig workflowState.State workflowState.CodeChallenge
                 |> Result.mapError (fun err -> ErrorConversion.oauthErrorToAuthWorkflowError err)
             
             do! BrowserServiceHelpers.launchBrowserWithFallback services.BrowserService authUrl
