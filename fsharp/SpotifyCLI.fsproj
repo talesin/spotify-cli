@@ -22,6 +22,7 @@
     <Compile Include="src/Services/AuthenticationWorkflow.fs" />
     <Compile Include="src/Infrastructure/SpotifyApi.fs" />
     <Compile Include="src/Services/UserProfileService.fs" />
+    <Compile Include="src/Services/PlaylistService.fs" />
     <Compile Include="src/CLI/Output.fs" />
     <Compile Include="src/CLI/Commands.fs" />
     <Compile Include="src/Program.fs" />

@@ -85,6 +85,15 @@ type UserProfileError =
     | ProfileRetrievalFailed of SpotifyError
     | ConfigurationError of ConfigError
 
+/// Playlist service error types
+type PlaylistError =
+    | PlaylistNotAuthenticated
+    | PlaylistAuthenticationExpired
+    | PlaylistTokenRefreshFailed of OAuthError
+    | PlaylistRetrievalFailed of SpotifyError
+    | PlaylistConfigurationError of ConfigError
+    | PaginationError of string
+
 /// Application-level errors that combine multiple error domains
 type AppError =
     | ConfigError of ConfigError
@@ -97,6 +106,7 @@ type AppError =
     | AuthWorkflowError of AuthWorkflowError
     | FileSystemError of FileSystemError
     | UserProfileError of UserProfileError
+    | PlaylistError of PlaylistError
     | ValidationError of field: string * reason: string
     | UnexpectedError of message: string
 
@@ -178,11 +188,19 @@ module ErrorFormatting =
         | PathNotFound path -> $"Path not found: {path}"
     
     let formatUserProfileError = function
-        | NotAuthenticated -> "Not authenticated. Please run 'spotify-cli --auth' first."
-        | AuthenticationExpired -> "Authentication expired. Please run 'spotify-cli --auth' to re-authenticate."
-        | TokenRefreshFailed oauthError -> $"Failed to refresh token: {formatOAuthError oauthError}"
-        | ProfileRetrievalFailed spotifyError -> $"Failed to retrieve profile: {formatSpotifyError spotifyError}"
-        | ConfigurationError configError -> $"Configuration error: {formatConfigError configError}"
+        | UserProfileError.NotAuthenticated -> "Not authenticated. Please run 'spotify-cli --auth' first."
+        | UserProfileError.AuthenticationExpired -> "Authentication expired. Please run 'spotify-cli --auth' to re-authenticate."
+        | UserProfileError.TokenRefreshFailed oauthError -> $"Failed to refresh token: {formatOAuthError oauthError}"
+        | UserProfileError.ProfileRetrievalFailed spotifyError -> $"Failed to retrieve profile: {formatSpotifyError spotifyError}"
+        | UserProfileError.ConfigurationError configError -> $"Configuration error: {formatConfigError configError}"
+    
+    let formatPlaylistError = function
+        | PlaylistNotAuthenticated -> "Not authenticated. Please run 'spotify-cli --auth' first."
+        | PlaylistAuthenticationExpired -> "Authentication expired. Please run 'spotify-cli --auth' to re-authenticate."
+        | PlaylistTokenRefreshFailed oauthError -> $"Failed to refresh token: {formatOAuthError oauthError}"
+        | PlaylistRetrievalFailed spotifyError -> $"Failed to retrieve playlists: {formatSpotifyError spotifyError}"
+        | PlaylistConfigurationError configError -> $"Configuration error: {formatConfigError configError}"
+        | PaginationError reason -> $"Pagination error: {reason}"
 
     let formatAppError = function
         | ConfigError err -> formatConfigError err
@@ -195,6 +213,7 @@ module ErrorFormatting =
         | AuthWorkflowError err -> formatAuthWorkflowError err
         | FileSystemError err -> formatFileSystemError err
         | UserProfileError err -> formatUserProfileError err
+        | PlaylistError err -> formatPlaylistError err
         | ValidationError(field, reason) -> $"Validation error in field '{field}': {reason}"
         | UnexpectedError message -> $"Unexpected error: {message}"
 
@@ -231,6 +250,7 @@ module ErrorConversion =
         | AppError.CryptoError cryptoErr -> cryptoErrorToAuthWorkflowError cryptoErr
         | AppError.AuthWorkflowError workflowErr -> workflowErr
         | AppError.UserProfileError userProfileErr -> AuthWorkflowError.ConfigurationError($"User profile error: {userProfileErr.ToString()}")
+        | AppError.PlaylistError playlistErr -> AuthWorkflowError.ConfigurationError($"Playlist error: {playlistErr.ToString()}")
         | AppError.HttpError httpErr -> AuthWorkflowError.ConfigurationError($"HTTP error: {ErrorFormatting.formatHttpError httpErr}")
         | AppError.SpotifyError spotifyErr -> AuthWorkflowError.ConfigurationError($"Spotify error: {ErrorFormatting.formatSpotifyError spotifyErr}")
         | AppError.FileSystemError fsErr -> AuthWorkflowError.ConfigurationError($"File system error: {ErrorFormatting.formatFileSystemError fsErr}")

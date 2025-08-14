@@ -113,7 +113,7 @@ module DomainOutput =
     
     /// Format playlist info for display
     let formatPlaylistInfo (playlist: PlaylistInfo) : string =
-        let name = TypeExtraction.getString50 playlist.Name
+        let name = TypeExtraction.getPlaylistName playlist.Name
         let trackCount = TypeExtraction.getTrackCount playlist.TrackCount
         let visibility = 
             match playlist.Visibility with

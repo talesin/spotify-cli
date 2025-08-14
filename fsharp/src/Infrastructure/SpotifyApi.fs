@@ -119,7 +119,7 @@ type SpotifyApiClient(httpService: IHttpService) =
     
     /// Convert Spotify playlist JSON to domain PlaylistInfo
     let convertPlaylist (json: SpotifyApiTypes.SpotifyPlaylistJson) : Result<PlaylistInfo, SpotifyError> =
-        let nameResult = ConstrainedTypes.createString50 json.name
+        let nameResult = ConstrainedTypes.createPlaylistName json.name
         let trackCountResult = ConstrainedTypes.createTrackCount json.tracks.total
         let spotifyUriResult = ConstrainedTypes.createSpotifyUri json.uri
         
@@ -162,10 +162,9 @@ type SpotifyApiClient(httpService: IHttpService) =
                     | :? JsonException as ex -> Error(ApiError $"Failed to parse user profile: {ex.Message}")
                     | ex -> Error(ApiError $"Unexpected error parsing user profile: {ex.Message}"))
         
-        member _.GetUserPlaylists(accessToken: AccessToken) =
-            match ConstrainedTypes.createHttpUrl (SpotifyEndpoints.getPlaylistsUrl()) with
-            | Error error -> Error(ApiError error)
-            | Ok url ->
+        member this.GetUserPlaylists(accessToken: AccessToken) =
+            // Helper function to fetch a single page of playlists
+            let fetchPlaylistPage (url: HttpUrl) : Result<SpotifyApiTypes.SpotifyPlaylistsResponse, SpotifyError> =
                 let headers = HttpServiceHelpers.createAuthorizationHeader accessToken
                 
                 httpService.Get url headers
@@ -174,8 +173,19 @@ type SpotifyApiClient(httpService: IHttpService) =
                 |> Result.bind (fun jsonContent ->
                     try
                         let playlistsResponse = JsonSerializer.Deserialize<SpotifyApiTypes.SpotifyPlaylistsResponse>(jsonContent, jsonOptions)
-                        
-                        playlistsResponse.items
+                        Ok playlistsResponse
+                    with
+                    | :? JsonException as ex -> Error(ApiError $"Failed to parse playlists: {ex.Message}")
+                    | ex -> Error(ApiError $"Unexpected error parsing playlists: {ex.Message}"))
+            
+            // Recursive function to fetch all pages
+            let rec fetchAllPages (url: HttpUrl) (accumulated: PlaylistInfo list) : Result<PlaylistInfo list, SpotifyError> =
+                match fetchPlaylistPage url with
+                | Error error -> Error error
+                | Ok response ->
+                    // Convert current page items
+                    let currentPageResult = 
+                        response.items
                         |> Array.map convertPlaylist
                         |> Array.toList
                         |> List.fold (fun acc result ->
@@ -184,9 +194,23 @@ type SpotifyApiClient(httpService: IHttpService) =
                             | Error error, _ -> Error error
                             | _, Error error -> Error error) (Ok [])
                         |> Result.map List.rev
-                    with
-                    | :? JsonException as ex -> Error(ApiError $"Failed to parse playlists: {ex.Message}")
-                    | ex -> Error(ApiError $"Unexpected error parsing playlists: {ex.Message}"))
+                    
+                    match currentPageResult with
+                    | Error error -> Error error
+                    | Ok currentPlaylists ->
+                        let allPlaylists = accumulated @ currentPlaylists
+                        
+                        // Check if there's a next page
+                        match response.next with
+                        | None -> Ok allPlaylists
+                        | Some nextUrlString ->
+                            match ConstrainedTypes.createHttpUrl nextUrlString with
+                            | Error error -> Error(ApiError $"Invalid next page URL: {error}")
+                            | Ok nextUrl -> fetchAllPages nextUrl allPlaylists
+            
+            match ConstrainedTypes.createHttpUrl (SpotifyEndpoints.getPlaylistsUrl()) with
+            | Error error -> Error(ApiError error)
+            | Ok url -> fetchAllPages url []
         
         member _.ExchangeCodeForTokens(_request: TokenExchangeRequest) =
             // TODO: Implement OAuth token exchange

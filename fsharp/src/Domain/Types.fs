@@ -6,6 +6,9 @@ open System.Text.RegularExpressions
 /// Constrained string type following F# coding guide principles
 type String50 = String50 of string
 
+/// Constrained string type for playlist names (longer than general strings)
+type PlaylistName = PlaylistName of string
+
 /// Constrained string type for single characters
 type String1 = String1 of string
 
@@ -56,7 +59,7 @@ type UserProfile = {
 /// Playlist information from Spotify API
 [<Struct>]
 type PlaylistInfo = {
-    Name: String50
+    Name: PlaylistName
     TrackCount: TrackCount
     Visibility: PlaylistVisibility
     Id: string
@@ -110,6 +113,14 @@ module ConstrainedTypes =
         else
             Ok(String50 s)
     
+    let createPlaylistName (s: string) : Result<PlaylistName, string> =
+        if String.IsNullOrEmpty(s) then
+            Ok(PlaylistName "Untitled Playlist")  // Handle empty names gracefully
+        elif s.Length > 100 then
+            Error $"Playlist name length {s.Length} exceeds maximum of 100 characters"
+        else
+            Ok(PlaylistName s)
+    
     let createString1 (s: string) : Result<String1, string> =
         if String.IsNullOrEmpty(s) then
             Error "String cannot be null or empty"
@@ -159,6 +170,7 @@ module ConstrainedTypes =
 module TypeExtraction =
     
     let getString50 (String50 s) = s
+    let getPlaylistName (PlaylistName s) = s
     let getString1 (String1 s) = s
     let getEmailAddress (EmailAddress s) = s
     let getSpotifyUri (SpotifyUri s) = s

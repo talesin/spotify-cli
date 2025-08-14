@@ -30,6 +30,7 @@ module Program =
         // Create Spotify API and user profile services
         let spotifyApiClient = SpotifyApiClient.create httpService
         let userProfileService = UserProfileService.create configService oauthService spotifyApiClient
+        let playlistService = PlaylistService.create configService oauthService spotifyApiClient
         
         // Return services record
         {
@@ -41,6 +42,7 @@ module Program =
             AuthWorkflow = authWorkflowService
             SpotifyApi = spotifyApiClient
             UserProfile = userProfileService
+            Playlist = playlistService
         }
     
     /// Validate environment configuration for OAuth

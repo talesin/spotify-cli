@@ -32,6 +32,7 @@ type IAppServices = {
     AuthWorkflow: IAuthenticationWorkflowService
     SpotifyApi: ISpotifyApiClient
     UserProfile: IUserProfileService
+    Playlist: IPlaylistService
 }
 
 /// OAuth authentication command handlers
@@ -171,16 +172,51 @@ module AuthCommandHandlers =
         } |> Async.RunSynchronously
     
     let handlePlaylists (services: IAppServices) : Result<PlaylistInfo list, AppError> =
-        Console.WriteLine("🎶 Playlists command - Service layer ready, API integration needed")
-        // Return sample playlists for demonstration
-        Ok([{
-            Name = String50 "My Playlist"
-            TrackCount = TrackCount 25
-            Visibility = Public
-            Id = "playlist123"
-            SpotifyUri = SpotifyUri "spotify:playlist:playlist123"
-            Description = Some "A test playlist"
-        }])
+        async {
+            try
+                Console.WriteLine("🎶 Fetching your Spotify playlists...")
+                Console.WriteLine()
+                
+                let! result = services.Playlist.GetUserPlaylists() |> Async.AwaitTask
+                
+                match result with
+                | Ok playlists ->
+                    Console.WriteLine("✅ Successfully retrieved your playlists:")
+                    Console.WriteLine()
+                    Console.WriteLine(DomainOutput.formatPlaylistList playlists)
+                    Console.WriteLine()
+                    
+                    // Display summary stats
+                    let stats = PlaylistServiceHelpers.getPlaylistStats playlists
+                    Console.WriteLine($"📊 {stats}")
+                    Console.WriteLine()
+                    return Ok playlists
+                | Error playlistError ->
+                    let errorMessage = PlaylistServiceHelpers.formatPlaylistError playlistError
+                    Console.WriteLine($"❌ {errorMessage}")
+                    Console.WriteLine()
+                    
+                    // Add helpful tips based on error type
+                    match playlistError with
+                    | PlaylistNotAuthenticated ->
+                        Console.WriteLine("💡 Tip: Run 'spotify-cli --auth' to authenticate with Spotify")
+                    | PlaylistAuthenticationExpired ->
+                        Console.WriteLine("💡 Tip: Your tokens have expired. Run 'spotify-cli --auth' to re-authenticate")
+                    | PlaylistTokenRefreshFailed _ ->
+                        Console.WriteLine("💡 Tip: Try running 'spotify-cli --auth' to get fresh authentication")
+                    | PlaylistRetrievalFailed _ ->
+                        Console.WriteLine("💡 Tip: Check your internet connection and try again")
+                    | PlaylistConfigurationError _ ->
+                        Console.WriteLine("💡 Tip: Check your environment variables and configuration")
+                    | PaginationError _ ->
+                        Console.WriteLine("💡 Tip: This may be a temporary issue, please try again")
+                    
+                    return Error(AppError.PlaylistError playlistError)
+            with
+            | ex ->
+                Console.WriteLine($"❌ Unexpected error while fetching playlists: {ex.Message}")
+                return Error(AppError.UnexpectedError ex.Message)
+        } |> Async.RunSynchronously
 
 /// Simple command processor for service integration testing
 module SimpleCommandProcessor =
