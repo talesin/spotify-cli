@@ -62,6 +62,42 @@ module TypesTests =
             invalidString50Tests
         ]
     
+    /// PlaylistName constraint tests
+    module PlaylistNameTests =
+        
+        let validPlaylistNameTests = testList "PlaylistName Valid Cases" [
+            
+            testCase "Valid playlist name should work" (fun () ->
+                let result = ConstrainedTypes.createPlaylistName "My Awesome Playlist"
+                Assertions.assertResultOk (PlaylistName "My Awesome Playlist") result)
+            
+            testCase "Empty string should create default name" (fun () ->
+                let result = ConstrainedTypes.createPlaylistName ""
+                Assertions.assertResultOk (PlaylistName "Untitled Playlist") result)
+            
+            testCase "Null string should create default name" (fun () ->
+                let result = ConstrainedTypes.createPlaylistName null
+                Assertions.assertResultOk (PlaylistName "Untitled Playlist") result)
+            
+            testCase "Exactly 100 character name should be valid" (fun () ->
+                let input = String.replicate 100 "A"
+                let result = ConstrainedTypes.createPlaylistName input
+                Assertions.assertResultOk (PlaylistName input) result)
+        ]
+        
+        let invalidPlaylistNameTests = testList "PlaylistName Invalid Cases" [
+            
+            testCase "101 character name should be invalid" (fun () ->
+                let input = String.replicate 101 "A"
+                let result = ConstrainedTypes.createPlaylistName input
+                Assertions.assertResultError result)
+        ]
+        
+        let allPlaylistNameTests = testList "PlaylistName Tests" [
+            validPlaylistNameTests
+            invalidPlaylistNameTests
+        ]
+    
     /// EmailAddress validation tests
     module EmailAddressTests =
         
@@ -278,6 +314,7 @@ module TypesTests =
     /// Main test suite
     let allTests = testList "Domain Types Tests" [
         String50Tests.allString50Tests
+        PlaylistNameTests.allPlaylistNameTests
         EmailAddressTests.allEmailTests
         SpotifyUriTests.allSpotifyUriTests  
         TrackCountTests.allTrackCountTests
