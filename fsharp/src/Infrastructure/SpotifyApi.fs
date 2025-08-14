@@ -77,7 +77,6 @@ type SpotifyApiClient(httpService: IHttpService) =
     
     let jsonOptions = 
         let options = JsonSerializerOptions()
-        options.Converters.Add(JsonFSharpConverter(JsonUnionEncoding.InternalTag ||| JsonUnionEncoding.NamedFields))
         options.PropertyNamingPolicy <- JsonNamingPolicy.CamelCase
         options
     

@@ -71,28 +71,43 @@ module DomainOutput =
     
     open ConsoleOutput
     
-    /// Format user profile for display
+    /// Format user profile for display in a bordered box
     let formatUserProfile (profile: UserProfile) : string =
         let displayName = 
             profile.DisplayName
             |> Option.map TypeExtraction.getString50
-            |> Option.defaultValue "Not provided"
+            |> Option.defaultValue "N/A"
         
         let email = TypeExtraction.getEmailAddress profile.Email
-        let country = profile.Country |> Option.defaultValue "Not provided"
+        let country = profile.Country |> Option.defaultValue "N/A"
         let spotifyUri = TypeExtraction.getSpotifyUri profile.SpotifyUri
         let followers = 
             profile.Followers
             |> Option.map string
-            |> Option.defaultValue "Not available"
+            |> Option.defaultValue "N/A"
+        
+        // Define box dimensions
+        let boxWidth = 47 // Total width including borders
+        let labelWidth = 14 // Width for labels like "Display Name:"
+        let valueWidth = boxWidth - labelWidth - 4 // 4 for "│ " and " │"
+        
+        // Helper function to create a table row
+        let createRow (label: string) (value: string) =
+            let truncatedValue = 
+                if value.Length > valueWidth then value.Substring(0, valueWidth)
+                else value
+            let paddedValue = truncatedValue.PadRight(valueWidth)
+            $"│ {label.PadRight(labelWidth - 1)}: {paddedValue} │"
         
         [
-            $"Display Name: {colorize Colors.Cyan displayName}"
-            $"Email:        {colorize Colors.White email}"
-            $"Country:      {colorize Colors.White country}"
-            $"User ID:      {colorize Colors.Gray profile.Id}"
-            $"Spotify URI:  {colorize Colors.Blue spotifyUri}"
-            $"Followers:    {colorize Colors.Magenta followers}"
+            "┌─────────────────────────────────────────────┐"
+            createRow "Display Name" displayName
+            createRow "Email" email
+            createRow "Country" country
+            createRow "User ID" profile.Id
+            createRow "Spotify URI" spotifyUri
+            createRow "Followers" followers
+            "└─────────────────────────────────────────────┘"
         ]
         |> String.concat "\n"
     

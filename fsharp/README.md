@@ -90,24 +90,33 @@ F# CLI app for interacting with Spotify using functional programming principles.
 - **AuthenticationWorkflow**: Orchestrates entire flow from URL generation to token storage
 - **CLI Integration**: Seamless integration with enhanced error handling and user guidance
 - **Security**: Proper PKCE implementation, state validation, and secure token storage
+- **Smart Authentication**: Checks existing tokens before starting OAuth (no unnecessary re-auth)
 
-**Current Status**: Production-ready OAuth authentication with real Spotify integration
+**Current Status**: Production-ready OAuth authentication with intelligent token management
 
 ---
 
-### Phase 4: Get User Profile
+### Phase 4: Get User Profile - ✅ **COMPLETED**
 
-- [ ] Implement `spotify-cli me` command using functional command pattern
-- [ ] Load access token from local storage with Result-based error handling
-- [ ] Implement token refresh logic using function composition
-- [ ] Call Spotify's `/me` API endpoint with proper error modeling
-- [ ] Parse and display user information using:
-  - [ ] Display Name (with Option handling for missing values)
-  - [ ] Email (validated email type from coding guide)
-  - [ ] Country (constrained string type)
-  - [ ] Spotify URI (proper URI validation and formatting)
-- [ ] Handle and display errors using domain-specific error types
-- [ ] Format output using functional string composition
+- [x] **Implement `spotify-cli me` command using functional command pattern**
+- [x] **Load access token from local storage with Result-based error handling**
+- [x] **Implement token refresh logic using function composition**
+- [x] **Call Spotify's `/me` API endpoint with proper error modeling**
+- [x] **Parse and display user information using:**
+  - [x] **Display Name (with Option handling for missing values)**
+  - [x] **Email (validated email type from coding guide)**
+  - [x] **Country (constrained string type)**
+  - [x] **Spotify URI (proper URI validation and formatting)**
+- [x] **Handle and display errors using domain-specific error types**
+- [x] **Format output using functional string composition**
+
+#### ✅ **Phase 4 Achievements:**
+- **UserProfileService**: Complete with automatic token refresh
+- **SpotifyApiClient**: Real API integration with JSON parsing
+- **Bordered Display**: Professional user profile formatting
+- **Error Handling**: Domain-specific errors with helpful tips
+- **Token Management**: Transparent refresh when near expiry
+- **Service Integration**: All components working together
 
 ---
 
@@ -129,10 +138,16 @@ F# CLI app for interacting with Spotify using functional programming principles.
 
 ### Phase 6: Token Management & Error Handling
 
-- [ ] **Automatic Token Refresh**: Implement transparent token renewal
-- [ ] **Error Recovery**: Handle network failures and API rate limits
-- [ ] **Validation**: Add comprehensive input validation using F# type system
+- [x] **Automatic Token Refresh**: Implement transparent token renewal
+- [x] **Error Recovery**: Handle network failures and API rate limits
+- [x] **Validation**: Add comprehensive input validation using F# type system
 - [ ] **Performance**: Optimize API calls and response parsing
 - [ ] **Testing**: Add integration tests for complete workflows
 - [ ] **Documentation**: Add comprehensive inline documentation
-- [ ] **Configuration**: Support environment-based configuration
+- [x] **Configuration**: Support environment-based configuration
+
+#### ✅ **Phase 6 Achievements (Partial):**
+- **Token Refresh**: Automatic renewal when tokens near expiry (5 minutes)
+- **Error Recovery**: Network timeouts, API errors, authentication failures
+- **Type Validation**: Constrained types for all domain objects (String50, EmailAddress, etc.)
+- **Configuration**: Environment variable support with `.envrc` integration

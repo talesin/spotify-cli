@@ -77,6 +77,14 @@ type FileSystemError =
     | CreateDirectoryError of path: string * reason: string
     | PathNotFound of path: string
 
+/// User profile service error types (forward declaration)
+type UserProfileError =
+    | NotAuthenticated
+    | AuthenticationExpired  
+    | TokenRefreshFailed of OAuthError
+    | ProfileRetrievalFailed of SpotifyError
+    | ConfigurationError of ConfigError
+
 /// Application-level errors that combine multiple error domains
 type AppError =
     | ConfigError of ConfigError
@@ -88,6 +96,7 @@ type AppError =
     | OAuthError of OAuthError
     | AuthWorkflowError of AuthWorkflowError
     | FileSystemError of FileSystemError
+    | UserProfileError of UserProfileError
     | ValidationError of field: string * reason: string
     | UnexpectedError of message: string
 
@@ -168,6 +177,13 @@ module ErrorFormatting =
         | CreateDirectoryError(path, reason) -> $"Failed to create directory {path}: {reason}"
         | PathNotFound path -> $"Path not found: {path}"
     
+    let formatUserProfileError = function
+        | NotAuthenticated -> "Not authenticated. Please run 'spotify-cli --auth' first."
+        | AuthenticationExpired -> "Authentication expired. Please run 'spotify-cli --auth' to re-authenticate."
+        | TokenRefreshFailed oauthError -> $"Failed to refresh token: {formatOAuthError oauthError}"
+        | ProfileRetrievalFailed spotifyError -> $"Failed to retrieve profile: {formatSpotifyError spotifyError}"
+        | ConfigurationError configError -> $"Configuration error: {formatConfigError configError}"
+
     let formatAppError = function
         | ConfigError err -> formatConfigError err
         | HttpError err -> formatHttpError err
@@ -178,6 +194,7 @@ module ErrorFormatting =
         | OAuthError err -> formatOAuthError err
         | AuthWorkflowError err -> formatAuthWorkflowError err
         | FileSystemError err -> formatFileSystemError err
+        | UserProfileError err -> formatUserProfileError err
         | ValidationError(field, reason) -> $"Validation error in field '{field}': {reason}"
         | UnexpectedError message -> $"Unexpected error: {message}"
 
@@ -198,7 +215,7 @@ module ErrorConversion =
         AuthWorkflowError.OAuthError err
     
     let cryptoErrorToAuthWorkflowError (err: CryptoError) : AuthWorkflowError =
-        ConfigurationError($"Crypto operation failed: {ErrorFormatting.formatCryptoError err}")
+        AuthWorkflowError.ConfigurationError($"Crypto operation failed: {ErrorFormatting.formatCryptoError err}")
     
     /// Convert AuthWorkflowError to AppError
     let authWorkflowErrorToAppError (err: AuthWorkflowError) : AppError =
@@ -213,6 +230,7 @@ module ErrorConversion =
         | AppError.OAuthError oauthErr -> oauthErrorToAuthWorkflowError oauthErr
         | AppError.CryptoError cryptoErr -> cryptoErrorToAuthWorkflowError cryptoErr
         | AppError.AuthWorkflowError workflowErr -> workflowErr
+        | AppError.UserProfileError userProfileErr -> AuthWorkflowError.ConfigurationError($"User profile error: {userProfileErr.ToString()}")
         | AppError.HttpError httpErr -> AuthWorkflowError.ConfigurationError($"HTTP error: {ErrorFormatting.formatHttpError httpErr}")
         | AppError.SpotifyError spotifyErr -> AuthWorkflowError.ConfigurationError($"Spotify error: {ErrorFormatting.formatSpotifyError spotifyErr}")
         | AppError.FileSystemError fsErr -> AuthWorkflowError.ConfigurationError($"File system error: {ErrorFormatting.formatFileSystemError fsErr}")

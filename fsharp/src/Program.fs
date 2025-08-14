@@ -5,6 +5,7 @@ open Argu
 open SpotifyCLI.CLI
 open SpotifyCLI.Services
 open SpotifyCLI.Domain
+open SpotifyCLI.Infrastructure
 
 /// Program with integrated service layer
 module Program =
@@ -26,6 +27,10 @@ module Program =
         let authWorkflowServices = AuthenticationWorkflowHelpers.createAuthWorkflowServices configService httpService cryptoService
         let authWorkflowService = AuthenticationWorkflowService.create authWorkflowServices
         
+        // Create Spotify API and user profile services
+        let spotifyApiClient = SpotifyApiClient.create httpService
+        let userProfileService = UserProfileService.create configService oauthService spotifyApiClient
+        
         // Return services record
         {
             Config = configService
@@ -34,6 +39,8 @@ module Program =
             Browser = browserService
             OAuth = oauthService
             AuthWorkflow = authWorkflowService
+            SpotifyApi = spotifyApiClient
+            UserProfile = userProfileService
         }
     
     /// Validate environment configuration for OAuth

@@ -20,11 +20,10 @@
     <Compile Include="src/Services/CallbackServerService.fs" />
     <Compile Include="src/Services/OAuthService.fs" />
     <Compile Include="src/Services/AuthenticationWorkflow.fs" />
+    <Compile Include="src/Infrastructure/SpotifyApi.fs" />
+    <Compile Include="src/Services/UserProfileService.fs" />
     <Compile Include="src/CLI/Output.fs" />
     <Compile Include="src/CLI/Commands.fs" />
-    <!-- Temporarily commented out to test foundation
-    <Compile Include="src/Infrastructure/SpotifyApi.fs" />
-    -->
     <Compile Include="src/Program.fs" />
   </ItemGroup>
 

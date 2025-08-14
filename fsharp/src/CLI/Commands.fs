@@ -2,8 +2,10 @@ namespace SpotifyCLI.CLI
 
 open System
 open Argu
+open System.Threading.Tasks
 open SpotifyCLI.Domain
 open SpotifyCLI.Services
+open SpotifyCLI.Infrastructure
 
 /// Simplified CLI command definitions for service integration
 type SpotifyCliArguments =
@@ -28,6 +30,8 @@ type IAppServices = {
     Browser: IBrowserService
     OAuth: IOAuthService
     AuthWorkflow: IAuthenticationWorkflowService
+    SpotifyApi: ISpotifyApiClient
+    UserProfile: IUserProfileService
 }
 
 /// OAuth authentication command handlers
@@ -50,29 +54,76 @@ module AuthCommandHandlers =
                     return Error(AppError.ConfigError(ConfigError.InvalidFormat "Environment variables not configured"))
                 | Ok clientId ->
                 
-                // Create authentication workflow configuration
-                let config = AuthenticationWorkflowHelpers.createDefaultConfig clientId
+                Console.WriteLine("🎵 Spotify CLI Authentication")
+                Console.WriteLine()
                 
-                // Run the complete authentication flow
-                let! result = services.AuthWorkflow.StartAuthenticationFlow(config) |> Async.AwaitTask
-                
-                match result with
-                | Ok authResult ->
+                // Check for existing tokens first
+                match ConfigServiceHelpers.isTokenValid services.Config with
+                | Ok true ->
+                    // Tokens exist and are valid
+                    Console.WriteLine("✅ You are already authenticated with Spotify!")
                     Console.WriteLine()
-                    Console.WriteLine(authResult.UserMessage)
-                    Console.WriteLine($"📁 Tokens saved to: {authResult.ConfigPath}")
-                    Console.WriteLine()
-                    Console.WriteLine("✨ You can now use other spotify-cli commands like 'me' and 'playlists'!")
+                    Console.WriteLine("Your access token is still valid.")
+                    Console.WriteLine("Use 'spotify-cli --me' to view your profile or 'spotify-cli --playlists' to see your playlists.")
                     return Ok()
-                | Error authErr ->
+                | Ok false ->
+                    // Tokens exist but are expired
+                    Console.WriteLine("⚠️  Your existing tokens have expired.")
+                    Console.WriteLine("Starting fresh authentication...")
                     Console.WriteLine()
-                    Console.WriteLine($"❌ Authentication failed: {AuthenticationWorkflowHelpers.formatAuthWorkflowError authErr}")
+                    
+                    // Create authentication workflow configuration
+                    let config = AuthenticationWorkflowHelpers.createDefaultConfig clientId
+                    
+                    // Run the complete authentication flow
+                    let! result = services.AuthWorkflow.StartAuthenticationFlow(config) |> Async.AwaitTask
+                    
+                    match result with
+                    | Ok authResult ->
+                        Console.WriteLine()
+                        Console.WriteLine(authResult.UserMessage)
+                        Console.WriteLine($"📁 Tokens saved to: {authResult.ConfigPath}")
+                        Console.WriteLine()
+                        Console.WriteLine("✨ You can now use other spotify-cli commands like 'me' and 'playlists'!")
+                        return Ok()
+                    | Error authErr ->
+                        Console.WriteLine()
+                        Console.WriteLine($"❌ Authentication failed: {AuthenticationWorkflowHelpers.formatAuthWorkflowError authErr}")
+                        Console.WriteLine()
+                        Console.WriteLine("💡 Common issues:")
+                        Console.WriteLine("   - Check your internet connection")
+                        Console.WriteLine("   - Verify environment variables are loaded")
+                        Console.WriteLine("   - Ensure callback server port (3000) is available")
+                        return Error(AppError.AuthWorkflowError authErr)
+                | Error _ ->
+                    // No tokens exist or error reading them
+                    Console.WriteLine("🔐 No existing authentication found.")
+                    Console.WriteLine("Starting OAuth flow with Spotify...")
                     Console.WriteLine()
-                    Console.WriteLine("💡 Common issues:")
-                    Console.WriteLine("   - Check your internet connection")
-                    Console.WriteLine("   - Verify environment variables are loaded")
-                    Console.WriteLine("   - Ensure callback server port (3000) is available")
-                    return Error(AppError.AuthWorkflowError authErr)
+                    
+                    // Create authentication workflow configuration
+                    let config = AuthenticationWorkflowHelpers.createDefaultConfig clientId
+                    
+                    // Run the complete authentication flow
+                    let! result = services.AuthWorkflow.StartAuthenticationFlow(config) |> Async.AwaitTask
+                    
+                    match result with
+                    | Ok authResult ->
+                        Console.WriteLine()
+                        Console.WriteLine(authResult.UserMessage)
+                        Console.WriteLine($"📁 Tokens saved to: {authResult.ConfigPath}")
+                        Console.WriteLine()
+                        Console.WriteLine("✨ You can now use other spotify-cli commands like 'me' and 'playlists'!")
+                        return Ok()
+                    | Error authErr ->
+                        Console.WriteLine()
+                        Console.WriteLine($"❌ Authentication failed: {AuthenticationWorkflowHelpers.formatAuthWorkflowError authErr}")
+                        Console.WriteLine()
+                        Console.WriteLine("💡 Common issues:")
+                        Console.WriteLine("   - Check your internet connection")
+                        Console.WriteLine("   - Verify environment variables are loaded")
+                        Console.WriteLine("   - Ensure callback server port (3000) is available")
+                        return Error(AppError.AuthWorkflowError authErr)
             with
             | ex ->
                 Console.WriteLine($"❌ Unexpected error during authentication: {ex.Message}")
@@ -80,16 +131,44 @@ module AuthCommandHandlers =
         } |> Async.RunSynchronously
     
     let handleMe (services: IAppServices) : Result<UserProfile, AppError> =
-        Console.WriteLine("👤 Me command - Service layer ready, API integration needed")
-        // Return sample user profile for demonstration
-        Ok({
-            DisplayName = Some(String50 "Test User")
-            Email = EmailAddress "test@example.com"
-            Country = Some "US"
-            SpotifyUri = SpotifyUri "spotify:user:testuser"
-            Id = "testuser123"
-            Followers = Some 42
-        })
+        async {
+            try
+                Console.WriteLine("👤 Fetching your Spotify profile...")
+                Console.WriteLine()
+                
+                let! result = services.UserProfile.GetCurrentUserProfile() |> Async.AwaitTask
+                
+                match result with
+                | Ok userProfile ->
+                    Console.WriteLine("✅ Successfully retrieved your profile information:")
+                    Console.WriteLine()
+                    Console.WriteLine(DomainOutput.formatUserProfile userProfile)
+                    Console.WriteLine()
+                    return Ok userProfile
+                | Error userProfileError ->
+                    let errorMessage = ErrorFormatting.formatUserProfileError userProfileError
+                    Console.WriteLine($"❌ {errorMessage}")
+                    Console.WriteLine()
+                    
+                    // Add helpful tips based on error type
+                    match userProfileError with
+                    | NotAuthenticated ->
+                        Console.WriteLine("💡 Tip: Run 'spotify-cli --auth' to authenticate with Spotify")
+                    | AuthenticationExpired ->
+                        Console.WriteLine("💡 Tip: Your tokens have expired. Run 'spotify-cli --auth' to re-authenticate")
+                    | TokenRefreshFailed _ ->
+                        Console.WriteLine("💡 Tip: Try running 'spotify-cli --auth' to get fresh authentication")
+                    | ProfileRetrievalFailed _ ->
+                        Console.WriteLine("💡 Tip: Check your internet connection and try again")
+                    | ConfigurationError _ ->
+                        Console.WriteLine("💡 Tip: Check your environment variables and configuration")
+                    
+                    return Error(AppError.UserProfileError userProfileError)
+            with
+            | ex ->
+                Console.WriteLine($"❌ Unexpected error while fetching profile: {ex.Message}")
+                return Error(AppError.UnexpectedError ex.Message)
+        } |> Async.RunSynchronously
     
     let handlePlaylists (services: IAppServices) : Result<PlaylistInfo list, AppError> =
         Console.WriteLine("🎶 Playlists command - Service layer ready, API integration needed")

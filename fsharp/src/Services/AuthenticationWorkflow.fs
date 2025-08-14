@@ -122,7 +122,7 @@ type AuthenticationWorkflowService(services: AuthWorkflowServices) =
             
             // Extract authorization code
             return! CallbackServerHelpers.extractAuthorizationCode callbackResult
-                    |> Result.mapError (fun err -> ConfigurationError($"Callback processing failed: {err}"))
+                    |> Result.mapError (fun err -> AuthWorkflowError.ConfigurationError($"Callback processing failed: {err}"))
         }
     
     /// Exchange authorization code for tokens using stored PKCE verifier

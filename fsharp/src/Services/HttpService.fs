@@ -63,8 +63,7 @@ type SystemHttpClient() =
                     // Create HttpRequestMessage
                     use httpRequestMessage = new HttpRequestMessage(request.Method, url)
                     
-                    // Set timeout
-                    httpClient.Timeout <- TimeSpan.FromMilliseconds(float request.TimeoutMs)
+                    // Note: Timeout is set on HttpClient creation, not per-request
                     
                     // Add headers
                     for kvp in request.Headers do
