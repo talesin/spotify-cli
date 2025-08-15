@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- Late override: this is imported after all props -->
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,70 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <OutputType>Library</OutputType>
+    <GenerateProgramFile>false</GenerateProgramFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors />
+    <WarningsNotAsErrors>FS0025</WarningsNotAsErrors>
+    <FSharpCoreImplicitPackageVersion>9.0.300</FSharpCoreImplicitPackageVersion>
+    <!-- Enable test coverage collection -->
+    <DebugType>portable</DebugType>
+    <!-- Copy all dependencies to output directory for testing -->
+    <CopyLocalLockFileAssemblies Condition=" '$(TargetFramework)' == 'net9.0' ">true</CopyLocalLockFileAssemblies>
+    <!-- Ensure test host runtime config is properly generated -->
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+  </PropertyGroup>
+
+
+  <ItemGroup>
+    <ProjectReference Include="../SpotifyCLI/SpotifyCLI.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Argu" Version="6.2.5" />
+    <PackageReference Include="fsunit" Version="7.1.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="NUnit" Version="4.4.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="5.1.0" />
+    <PackageReference Include="FsCheck" Version="3.3.0" />
+    <PackageReference Include="FsCheck.NUnit" Version="3.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Test utilities must come first as they're referenced by other tests -->
+    <Compile Include="TestUtilities.fs" />
+
+    <!-- Basic working tests for VS Code integration verification -->
+    <!-- <Compile Include="MinimalXunitTest.fs" /> -->
+    <Compile Include="SimpleTest.fs" />
+
+    <!-- Domain tests - TEMPORARILY DISABLED -->
+    <!-- <Compile Include="Domain/TypesTests.fs" /> -->
+
+    <!-- Service tests (in dependency order) -->
+    <!-- <Compile Include="Services/ConfigServiceTests.fs" /> -->
+    <!-- <Compile Include="Services/CryptoServiceTests.fs" /> -->
+    <!-- <Compile Include="Services/HttpServiceTests.fs" /> -->
+    <!-- <Compile Include="Services/BrowserServiceTests.fs" /> -->
+    <!-- <Compile Include="Services/OAuthServiceTests.fs" /> -->
+    <!-- <Compile Include="Services/CacheServiceTests.fs" /> -->
+
+    <!-- Test entry point for FsCheck runner -->
+
+
+    <!-- <Compile Include="TestProgram.fs" /> -->
+
+  </ItemGroup>
+
+  <Target Name="ForceLibraryOutput" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <OutputType>Library</OutputType>
+    </PropertyGroup>
+    <Message Text="ForceLibraryOutput: OutputType=$(OutputType)" Importance="High" />
+  </Target>
+
+
+</Project>

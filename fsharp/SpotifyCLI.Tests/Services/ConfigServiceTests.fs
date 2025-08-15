@@ -50,7 +50,7 @@ module ConfigServiceTests =
                     Expect.equal (TypeExtraction.getRefreshToken tokens.RefreshToken) "test-refresh-token" "Refresh token should match"
                     Expect.equal tokens.TokenType "Bearer" "Token type should match"
                 | Error error -> 
-                    failtestf $"Expected success but got error: %A" error)
+                    failtestf $"Expected success but got error: {error}")
         ]
         
         let errorCases = testList "ReadTokens Error Cases" [
@@ -64,7 +64,7 @@ module ConfigServiceTests =
                 match result with
                 | Error(ConfigError.FileNotFound _) -> () // Expected
                 | Ok _ -> failtest "Expected FileNotFound error but got success"
-                | Error other -> failtestf $"Expected FileNotFound but got: %A" other)
+                | Error other -> failtestf $"Expected FileNotFound but got: {other}")
             
             testCase "Should return InvalidFormat for malformed JSON" (fun () ->
                 let configPath = "/test/.spotify-cli/spotify.json"  
@@ -76,7 +76,7 @@ module ConfigServiceTests =
                 match result with
                 | Error(ConfigError.InvalidFormat _) -> () // Expected
                 | Ok _ -> failtest "Expected InvalidFormat error but got success"
-                | Error other -> failtestf $"Expected InvalidFormat but got: %A" other)
+                | Error other -> failtestf $"Expected InvalidFormat but got: {other}")
         ]
         
         let allReadTokensTests = testList "ReadTokens Tests" [
@@ -93,7 +93,7 @@ module ConfigServiceTests =
                 let fileSystem = TestFixtures.createEmptyMockFileSystem()
                 let configService = ConfigService.create fileSystem
                 
-                let result = configService.WriteTokens(TestData.sampleTokenStorage)
+                let result = configService.WriteTokens TestData.sampleTokenStorage
                 
                 Assertions.assertResultOk () result)
         ]
@@ -149,7 +149,7 @@ module ConfigServiceTests =
                 
                 match result with
                 | Ok isValid -> Expect.isTrue isValid "Token should be valid"
-                | Error error -> failtestf $"Expected success but got error: %A" error)
+                | Error error -> failtestf "Expected success but got error: %A" error)
             
             testCase "Should detect expired token correctly" (fun () ->
                 let expiredTokens = {
@@ -165,7 +165,7 @@ module ConfigServiceTests =
                 
                 match result with
                 | Ok isValid -> Expect.isFalse isValid "Token should be invalid/expired"
-                | Error error -> failtestf $"Expected success but got error: %A" error)
+                | Error error -> failtestf "Expected success but got error: %A" error)
         ]
         
         let getValidTokenTests = testList "GetValidTokenOrError Tests" [
@@ -186,7 +186,7 @@ module ConfigServiceTests =
                 | Ok tokens -> 
                     Expect.equal (TypeExtraction.getAccessToken tokens.AccessToken) 
                                  (TypeExtraction.getAccessToken validTokens.AccessToken) "Should return the valid tokens"
-                | Error error -> failtestf $"Expected success but got error: %A" error)
+                | Error error -> failtestf "Expected success but got error: %A" error)
             
             testCase "Should return error when token is expired" (fun () ->
                 let expiredTokens = TestData.expiredTokenStorage
@@ -200,7 +200,7 @@ module ConfigServiceTests =
                 match result with
                 | Error(ConfigError.InvalidFormat _) -> () // Expected
                 | Ok _ -> failtest "Expected error for expired token but got success"
-                | Error other -> failtestf $"Expected InvalidFormat error but got: %A" other)
+                | Error other -> failtestf "Expected InvalidFormat error but got: %A" other)
         ]
         
         let tokenExpiryUpdateTests = testList "Token Expiry Update Tests" [
@@ -232,7 +232,7 @@ module ConfigServiceTests =
         
         let tokenRoundtripTests = testList "Token Roundtrip Property Tests" [
             
-            testProperty "Tokens should roundtrip through JSON serialization" (fun () ->
+            testCase "Tokens should roundtrip through JSON serialization" (fun () ->
                 // Create a property that tests serialization roundtrip
                 let tokenStorage = TestData.sampleTokenStorage
                 
